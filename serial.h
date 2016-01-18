@@ -20,7 +20,7 @@ typedef enum {
 	RECEIVED_START_BIT,
 	RECEIVING_DATA,
 	RECEIVED_STOP_BIT,
-} serial_status_t;
+} serial_state_t;
 
 struct serial {
 	serial_speed_t speed;
@@ -28,9 +28,29 @@ struct serial {
 	uint8_t tx_port;
 	uint8_t	rx_pin;
 	uint8_t rx_port;
-	serial_status_t status;
-	
+	serial_state_t state;
 };
+
+/************************************************************************
+ * serial_initialise: set up connection
+ * 
+ * Parameters:
+ *          struct serial *serial   Serial config structure 
+ *
+ * Returns:
+ *      null on error
+ *      The serial config structure with state filled in on OK
+ *
+ * This function:
+ *  - Starts the timer to provide the 'clock'
+ *  - Sets up the I/O ports
+ *  - Sets up the frame receive interrupt
+ * Possible errors are:
+ *  - Timer already running, so UART connection already started
+ *  - No PCINT interrupt possible on RX pin   
+ ************************************************************************/
+ 
+extern struct serial *serial_initialise(struct serial *serial);
 
 /************************************************************************
  * serial_put_char: send a single byte
