@@ -13,6 +13,7 @@ typedef enum {
 } serial_speed_t;
 
 typedef enum {
+	NOT_INITIALISED,
 	IDLE,
 	SENT_START_BIT,
 	SENDING_DATA,
@@ -22,24 +23,28 @@ typedef enum {
 	RECEIVED_STOP_BIT,
 } serial_state_t;
 
-struct serial {
+struct serial_config {
 	serial_speed_t speed;
 	uint8_t	tx_pin;
 	uint8_t tx_port;
 	uint8_t	rx_pin;
 	uint8_t rx_port;
-	serial_state_t state;
 };
+
+typedef enum {
+	ERROR,
+ 	OK,	
+} return_code_t ;
 
 /************************************************************************
  * serial_initialise: set up connection
  * 
  * Parameters:
- *          struct serial *serial   Serial config structure 
+ *          struct serial_config *serial   Serial config structure 
  *
  * Returns:
- *      null on error
- *      The serial config structure with state filled in on OK
+ *      ERROR on error
+ *      OK otherwise
  *
  * This function:
  *  - Starts the timer to provide the 'clock'
@@ -50,32 +55,32 @@ struct serial {
  *  - No PCINT interrupt possible on RX pin   
  ************************************************************************/
  
-extern struct serial *serial_initialise(struct serial *serial);
+extern return_code_t serial_initialise(struct serial_config *serial);
 
 /************************************************************************
  * serial_put_char: send a single byte
  *
  * Parameters:
- * 		struct serial *		Configuration structure of this connection
+ * 		struct serial_config *		Configuration structure of this connection
  *		uint8_t data		Byte to send
  *
  * Returns:
  * 		uint8_t length 			Length of data sent out (should be 1)
  ************************************************************************/
 
-extern uint8_t serial_put_char(struct serial *serial, uint8_t data);
+extern uint8_t serial_put_char(struct serial_config *serial, uint8_t data);
 
 /************************************************************************
  * serial_send_data
  ************************************************************************/
 
-extern uint16_t serial_send_data(struct serial *serial, uint8_t *data, uint16_t data_length);
+extern uint16_t serial_send_data(struct serial_config *serial, uint8_t *data, uint16_t data_length);
 
 /************************************************************************
  * serial_data_pending
  ************************************************************************/
 
-extern uint16_t serial_data_pending(struct serial *serial);
+extern uint16_t serial_data_pending(struct serial_config *serial);
 
 /************************************************************************
  * serial_get_char     
