@@ -5,22 +5,22 @@
  ************************************************************************/
 
 typedef enum {
-	SPEED_9600,
-	SPEED_19200,
-	SPEED_38400,
-	SPEED_57600,
-	SPEED_115200,
+	SERIAL_SPEED_9600,
+	SERIAL_SPEED_19200,
+	SERIAL_SPEED_38400,
+	SERIAL_SPEED_57600,
+	SERIAL_SPEED_115200,
 } serial_speed_t;
 
 typedef enum {
-	NOT_INITIALISED,
-	IDLE,
-	SENT_START_BIT,
-	SENDING_DATA,
-	SENT_STOP_BIT,
-	RECEIVED_START_BIT,
-	RECEIVING_DATA,
-	RECEIVED_STOP_BIT,
+	SERIAL_NOT_INITIALISED,
+	SERIAL_IDLE,
+	SERIAL_SENT_START_BIT,
+	SERIAL_SENDING_DATA,
+	SERIAL_SENT_STOP_BIT,
+	SERIAL_RECEIVED_START_BIT,
+	SERIAL_RECEIVING_DATA,
+	SERIAL_RECEIVED_STOP_BIT,
 } serial_state_t;
 
 struct serial_config {
@@ -32,15 +32,15 @@ struct serial_config {
 };
 
 typedef enum {
-	ERROR,
- 	OK,	
+	SERIAL_ERROR,
+ 	SERIAL_OK,	
 } return_code_t ;
 
 /************************************************************************
  * serial_initialise: set up connection
  * 
  * Parameters:
- *          struct serial_config *serial   Serial config structure 
+ *          struct serial_config *config   Serial config structure 
  *
  * Returns:
  *      ERROR on error
@@ -55,7 +55,7 @@ typedef enum {
  *  - No PCINT interrupt possible on RX pin   
  ************************************************************************/
  
-extern return_code_t serial_initialise(struct serial_config *serial);
+extern return_code_t serial_initialise(struct serial_config *config);
 
 /************************************************************************
  * serial_put_char: send a single byte
@@ -68,22 +68,22 @@ extern return_code_t serial_initialise(struct serial_config *serial);
  * 		uint8_t length 			Length of data sent out (should be 1)
  ************************************************************************/
 
-extern uint8_t serial_put_char(struct serial_config *serial, uint8_t data);
+extern uint8_t serial_put_char(struct serial_config *config, uint8_t data);
 
 /************************************************************************
  * serial_send_data
  ************************************************************************/
 
-extern uint16_t serial_send_data(struct serial_config *serial, uint8_t *data, uint16_t data_length);
+extern uint16_t serial_send_data(struct serial_config *config, uint8_t *data, uint16_t data_length);
 
 /************************************************************************
  * serial_data_pending
  ************************************************************************/
 
-extern uint16_t serial_data_pending(struct serial_config *serial);
+extern uint16_t serial_data_pending(struct serial_config *config);
 
 /************************************************************************
  * serial_get_char     
  ************************************************************************/
 
-extern uint8_t serial_get_char(struct_serial *serial);
+extern uint8_t serial_get_char(struct serial_config *config);
