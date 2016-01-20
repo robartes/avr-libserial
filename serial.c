@@ -7,12 +7,41 @@
 #include <avr/io.h>
 #include <stdint.h>
 
+#define NUM_SPEED   sizeof(serial_speed_t)
+
+// libserial normally uses Timer0, but at compile time can be configured
+// to use Timer1 by defining LIBSERIAL_USE_TIMER1
+#ifdef LIBSERIAL_USE_TIMER1
+    (volatile int *) timer_ocr = &OCR1A;        // Not in __assembler__ so need &(SFR_REG).
+    (volatile int *) timer_tccra = &TCCR1A;
+    (volatile int *) timer_tccrb = &TCCR1B;
+#else
+    (volatile int *) timer_ocr = &OCR0A;
+    (volatile int *) timer_tccra = &TCCR0A;
+    (volatile int *) timer_tccrb = &TCCR0B;
+#endif
+
 /************************************************************************
  * state variables (global)
  ************************************************************************/
 
 serial_state_t connection_state = NOT_INITIALISED;
 
+/************************************************************************
+ * Private functions
+ ************************************************************************/
+
+static return_code_t setup_io((volatile uint8_t *) port, (volatile uint8_t *) pin)
+{
+
+
+    return OK;
+
+}
+
+/************************************************************************
+ * Public functions
+ ************************************************************************/
 /************************************************************************
  * serial_initialise: set up connection
  * 
@@ -68,31 +97,40 @@ serial_state_t connection_state = NOT_INITIALISED;
  * you want to overclock your AVR, please modify the code accordingly
  ************************************************************************/
 
-extern return_code_t serial_initialise(struct serial *serial)
+extern return_code_t serial_initialise(struct serial_config *config)
 {
 
+    uint16_t serial_speeds[NUM_SPEED] = {9600, 19200, 38400, 57600, 115200};
 
     // Setup I/O
+    if (setup_io(config->tx_port, config->tx_pin) != OK) {
+        return ERROR;
+    };
+
+    if (setup_io(config->rx_port, config->rx_pin) != OK) {
+        return ERROR;
+    };
+
     // Setup interrupt
 	// Start timer with appropriate prescaler
 
 #   if F_CPU < 4000000
 
     // CLK I/O
-    TCCR0B &= ~(1 << CS02 | 1 << CS01 | 1 << CS00);
-    TCCR0B |= (1 << CS00);
+    timer_tccrb &= ~(1 << CS02 | 1 << CS01 | 1 << CS00);
+    timer_tccrb |= (1 << CS00);
 
 #   elif F_CPU < 16000000
 
     // CLK I/O / 8
-    TCCR0B &= ~(1 << CS02 | 1 << CS01 | 1 << CS00);
-    TCCR0B |= (1 << CS01);
+    timer_tccrb &= ~(1 << CS02 | 1 << CS01 | 1 << CS00);
+    timer_tccrb |= (1 << CS01);
 
 #   else
 
 	// CLK I/O / 64
-    TCCR0B &= ~(1 << CS02 | 1 << CS01 | 1 << CS00);
-    TCCR0B |= (1 << CS01 | 1 << CS00);
+    timer_tccrb &= ~(1 << CS02 | 1 << CS01 | 1 << CS00);
+    timer_tccrb |= (1 << CS01 | 1 << CS00);
 
 #   endif
 
