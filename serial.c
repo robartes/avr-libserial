@@ -9,18 +9,6 @@
 
 #define NUM_SPEED   sizeof(serial_speed_t)
 
-// libserial normally uses Timer0, but at compile time can be configured
-// to use Timer1 by defining LIBSERIAL_USE_TIMER1
-#ifdef LIBSERIAL_USE_TIMER1
-    (volatile int *) timer_ocr = &OCR1A;        // Not in __assembler__ so need &(SFR_REG).
-    (volatile int *) timer_tccra = &TCCR1A;
-    (volatile int *) timer_tccrb = &TCCR1B;
-#else
-    (volatile int *) timer_ocr = &OCR0A;
-    (volatile int *) timer_tccra = &TCCR0A;
-    (volatile int *) timer_tccrb = &TCCR0B;
-#endif
-
 /************************************************************************
  * state variables (global)
  ************************************************************************/
@@ -80,21 +68,14 @@ static return_code_t setup_io((volatile uint8_t *) port, (volatile uint8_t *) pi
  * 115200 Hz any more (as the minimum OCR value is 1, and the ISR
  * triggers at the *end* of the timer cycle).
  *
- * So, for F_CPU under 4000000, we use the system clock without prescaler
- * and run the timer at CLKI/O. For F_CPU under 16000000 we run the timer
- * with /8 prescaler, so timer frequency is between 500kHz and 2MHz. So
- * far so good. 
- *
- * At over 16000000 MHz we switch to the next prescaler value, which is
- * /64. Timer frequency will be between 250kHz and 312.5kHz (assuming we
- * stop at 20MHz), which falls within our range.
+ * Timer1 on an ATTinyx5 has a nice /16 prescaler mode which fits our
+ * range perfectly. At 4 MHz (I'm assuming you are not going to clock
+ * your ATTiny slower than that), we have a frequency of 250kHz, while
+ * at 20Mhz (datasheet maximum) it will be 1.25MHz. 
  *
  * Please note that the CPU frequency is determined at compile
  * time through the F_CPU macro. If you play with the clock prescaler
- * at runtime, serial timings will be off. Please also note that the 
- * below timings are only valid until around 39Mhz when we need a third
- * time around the timer for 9600 and a second time around for 19200. If
- * you want to overclock your AVR, please modify the code accordingly
+ * at runtime, serial timings will be off.
  ************************************************************************/
 
 extern return_code_t serial_initialise(struct serial_config *config)
@@ -112,27 +93,10 @@ extern return_code_t serial_initialise(struct serial_config *config)
     };
 
     // Setup interrupt
-	// Start timer with appropriate prescaler
 
-#   if F_CPU < 4000000
-
-    // CLK I/O
-    timer_tccrb &= ~(1 << CS02 | 1 << CS01 | 1 << CS00);
-    timer_tccrb |= (1 << CS00);
-
-#   elif F_CPU < 16000000
-
-    // CLK I/O / 8
-    timer_tccrb &= ~(1 << CS02 | 1 << CS01 | 1 << CS00);
-    timer_tccrb |= (1 << CS01);
-
-#   else
-
-	// CLK I/O / 64
-    timer_tccrb &= ~(1 << CS02 | 1 << CS01 | 1 << CS00);
-    timer_tccrb |= (1 << CS01 | 1 << CS00);
-
-#   endif
+	// Start timer. /16 prescaler - datasheet p.89 table 12-5
+	TCCR1 &= ~(1 << CS13 | 1 << CS12 | 1 << CS11 | 1 << CS10);
+	TCCR1 |= (1 << CS12 | 1 << CS10);
 
    
     connection_state = IDLE;
