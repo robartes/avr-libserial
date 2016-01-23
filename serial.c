@@ -94,16 +94,53 @@ static void move_connection_state(uint8_t src_state, uint8_t dst_state)
 
 }
 
+static void send_data_bit(uint8_t bit)
+{
+
+		switch(tx_byte & (1 << bit)) {
+			case 1:
+				*tx_port |= (1 << tx_bit);
+				break;
+			case 0:
+				*tx_port &= ~(1 << tx_bit);
+
+		}
+
+}
+
+uint8_t shift_buffer_down(struct buffer *buffer)
+{
+
+	uint8_t retval = 0;
+	uint8_t i = 0;
+
+	if (!buffer->lock) {
+
+		buffer->lock = 1;
+		for (i=0; i < buffer->top ; i++) {
+			buffer->data[i] = buffer->data[i+1];
+		}
+		buffer->data[(buffer->top)--] = 0;
+		buffer->lock = 0;
+		retval = 1;
+
+	}
+
+	return retval;
+
+}
+
 /************************************************************************
  * Timer1 Compare Match A interrupt - main polling / transmit routine
  *
- * This function is fairly large, as it does basically all the work of 
+ * This function is fairly large, as it does essentially all the work of 
  * this library.
  ************************************************************************/
 
 volatile uint8_t rx_bit_counter = 0;
 volatile uint8_t tx_bit_counter = 0;
 volatile uint8_t rx_byte = 0;
+volatile uint8_t tx_byte = 0;
 
 ISR(TIM1_COMPA_vect)
 {
@@ -176,9 +213,52 @@ ISR(TIM1_COMPA_vect)
 	
 	// TX
 	if (connection_state_is(SERIAL_SENT_START_BIT)) {
-		// To write	
+
+		// Write first bit of data
+		send_data_bit(tx_bit_counter++);
+		move_connection_state(
+			SERIAL_SENT_START_BIT,
+			SERIAL_SENDING_DATA 
+		);
+
 	} else if (connection_state_is(SERIAL_SENDING_DATA)) {
-		// To write	
+
+		// Data or stop bit
+		if (tx_bit_counter == 8) {
+
+			// Stop bit
+			*tx_port |=(1 << tx_bit);
+
+			// Try to shift out the sent byte
+			if (shift_buffer_down(*tx_buffer)) {
+				move_connection_state(
+					SERIAL_SENDING_DATA,
+					SERIAL_IDLE
+				);
+			} else {
+				// Drat. Try again later
+				move_connection_state(
+					SERIAL_SENDING_DATA,
+					SERIAL_TX_BUFFER_LOCKED
+				);
+			}
+
+		} else {
+
+			// Data bit
+			send_data_bit(tx_bit_counter++);
+
+		}
+
+	} else if (connection_state_is(SERIAL_TX_BUFFER_LOCKED)) {
+
+		// Keep trying to shift TX buffer
+		if (shift_buffer_down(*tx_buffer)) {
+			move_connection_state(
+				SERIAL_SENDING_DATA,
+				SERIAL_IDLE
+			);
+		}	
 
 	} else {
 
@@ -188,6 +268,7 @@ ISR(TIM1_COMPA_vect)
 			// New data
 			*tx_port &= ~(1 << tx_bit);  // Start bit
 			tx_byte = tx_buffer.data[0];
+			tx_bit_counter = 0;
 			move_connection_state(
 				SERIAL_IDLE,
 				SERIAL_SENT_START_BIT
