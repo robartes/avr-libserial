@@ -96,6 +96,9 @@ static void move_connection_state(uint8_t src_state, uint8_t dst_state)
 
 /************************************************************************
  * Timer1 Compare Match A interrupt - main polling / transmit routine
+ *
+ * This function is fairly large, as it does basically all the work of 
+ * this library.
  ************************************************************************/
 
 volatile uint8_t rx_bit_counter = 0;
@@ -106,10 +109,9 @@ ISR(TIM1_COMPA_vect)
 {
 
 	// RX
-	if (get_connection_state(SERIAL_RECEIVED_START_BIT)) {
+	if (connection_state_is(SERIAL_RECEIVED_START_BIT)) {
 
 		// First data bit
-
 		if (bit_is_set(*rx_port, rx_pin))
 			rx_byte |= (1 << rx_bit_counter);	
 		rx_bit_counter++;
@@ -119,30 +121,26 @@ ISR(TIM1_COMPA_vect)
 		);
 			
 
-	} else if (get_connection_state(SERIAL_RECEIVING_DATA)) {
+	} else if (connection_state_is(SERIAL_RECEIVING_DATA)) {
 	
 		// Subsequent data bits or stop bit
 		switch (rx_byte_counter) {
 
 			case 8:
 
-				// Check for stop bit
+				// Stop bit. If received, load data into
+				// the receive buffer. As this library is the only one
+				// with access, and shifting bytes out of the buffer is 
+				// done in the bottom handler of this interrupt, we can
+				// be sure no one else is accessing the buffer
 				if (bit_is_set(*rx_port, rx_pin)) {
 					rx_bit_counter = 0;
-					if (!rx_buffer.lock) {
-						store_data(*rx_buffer, rx_byte);
-						rx_byte = 0;
-						move_connection_state(
-							SERIAL_RECEIVING_DATA,
-							SERIAL_IDLE,
-						);
-					} else {
-						// Buffer was locked. Try again
-						move_connection_state(
-							SERIAL_RECEIVING_DATA,
-							SERIAL_RECEIVE_BUFFER_LOCKED,
-						);
-					}
+					store_data(*rx_buffer, rx_byte);
+					rx_byte = 0;
+					move_connection_state(
+						SERIAL_RECEIVING_DATA,
+						SERIAL_IDLE,
+					);
 				} else {
 					// Weird - no stop bit after 8 data bits. Reset connection
 					move_connection_state(
@@ -155,22 +153,56 @@ ISR(TIM1_COMPA_vect)
 
 			default:
 
+				// Normal data bit
+				if (bit_is_set(*rx_port, rx_pin))
+					rx_byte |= (1 << rx_bit_counter);	
+				rx_bit_counter++;
+
 				break;
 		}
-
-    } else if (get_connection_state(SERIAL_RECEIVED_STOP_BIT)) {
 
 	} else {
 
 		// Not receiving anything right now. Check for start bit
 		if (bit_is_clear(*rx_port, rx_pin))
-			set_connection_state(SERIAL_RECEIVED_START_BIT);
+			move_connection_state(
+				SERIAL_IDLE,
+				SERIAL_RECEIVED_START_BIT
+			);
 
 	}
 
 
 	
 	// TX
+	if (connection_state_is(SERIAL_SENT_START_BIT)) {
+		// To write	
+	} else if (connection_state_is(SERIAL_SENDING_DATA)) {
+		// To write	
+
+	} else {
+
+		// Not sending anything. Check for byte to send
+		if (tx_buffer.top) {
+
+			// New data
+			*tx_port &= ~(1 << tx_bit);  // Start bit
+			tx_byte = tx_buffer.data[0];
+			move_connection_state(
+				SERIAL_IDLE,
+				SERIAL_SENT_START_BIT
+			);
+
+		}
+
+	}
+
+
+	// Bottom handlers. Lock is used as a 'please shift' flag.
+	if (rx_buffer.lock) {
+		// shift out byte
+		// To write	
+	}
 }
 
 /************************************************************************
@@ -216,20 +248,18 @@ extern return_code_t serial_initialise(struct serial_config *config)
 	if ((rxd = malloc(RX_BUFFER_SIZE)) == NULL)
 		return SERIAL_ERROR;
 
-	if ((tx = malloc(TX_BUFFER_SIZE)) == NULL)
+	if ((txd = malloc(TX_BUFFER_SIZE)) == NULL)
 		return SERIAL_ERROR;
 
 	rx_buffer.data = rxd;
 	tx_buffer.data = txd;
 
 	// Setup I/O
-	if (setup_io(config->tx_port, config->tx_pin, SERIAL_DIR_TX) != SERIAL_OK) {
+	if (setup_io(config->tx_port, config->tx_pin, SERIAL_DIR_TX) != SERIAL_OK)
 		return SERIAL_ERROR;
-	};
 
-	if (setup_io(config->rx_port, config->rx_pin, SERIAL_DIR_RX) != SERIAL_OK) {
+	if (setup_io(config->rx_port, config->rx_pin, SERIAL_DIR_RX) != SERIAL_OK)
 		return SERIAL_ERROR;
-	};
 
 	my_config.rx_port = rx_port;
 	my_config.rx_pin = rx_pin;
@@ -254,7 +284,7 @@ extern return_code_t serial_initialise(struct serial_config *config)
 
 }
 
-extern uint8_t get_connection_state(uint8_t expected_state)
+extern uint8_t connection_state_is(uint8_t expected_state)
 {
 
 	return connection_state & expected_state;
