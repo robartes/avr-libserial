@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "serial.h"
+#include <avr/interrupt.h>
 
 #define NUM_SPEED		   5 
 #define PRESCALAR_DIVISOR   16
@@ -543,13 +544,15 @@ extern return_code_t serial_put_char(uint8_t data)
 	}
 	release_buffer_lock(&tx_buffer);
 
+	return retval;
+
 }
 
 /************************************************************************
  * serial_send_data: Send multiple byte serial data
  *
  * Parameters:
- *		uint8_t *data	The data to be sent
+ *		char *data	The data to be sent
  * 		uint16_t length	The length of the data to be sent
  *
  * Returns:
@@ -557,7 +560,7 @@ extern return_code_t serial_put_char(uint8_t data)
  *		buffer might be full or some other error might have occured
  ************************************************************************/
 
-extern uint16_t serial_send_data(uint8_t *data, uint16_t data_length)
+extern uint16_t serial_send_data(char *data, uint16_t data_length)
 {
 
 	uint16_t i;

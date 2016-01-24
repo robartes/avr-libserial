@@ -19,9 +19,9 @@ typedef enum {
 struct serial_config {
 	serial_speed_t speed;
 	uint8_t	tx_pin;
-	uint8_t *tx_port;
+	volatile uint8_t *tx_port;
 	uint8_t	rx_pin;
-	uint8_t *rx_port;
+	volatile uint8_t *rx_port;
 };
 
 typedef enum {
@@ -77,7 +77,7 @@ extern return_code_t serial_put_char(uint8_t data);
  *		buffer might be full or some other error might have occured
  ************************************************************************/
 
-extern uint16_t serial_send_data(uint8_t *data, uint16_t data_length);
+extern uint16_t serial_send_data(char *data, uint16_t data_length);
 
 /************************************************************************
  * serial_data_pending: Check whether any data has been received
@@ -99,4 +99,4 @@ extern uint16_t serial_data_pending();
  *		uint8_t	data	The data retrieved from the buffer
  ************************************************************************/
 
-extern uint8_t serial_get_char()
+extern uint8_t serial_get_char();
