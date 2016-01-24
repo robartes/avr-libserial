@@ -31,9 +31,9 @@ typedef enum {
 struct serial_config {
 	serial_speed_t speed;
 	uint8_t	tx_pin;
-	uint8_t tx_port;
+	uint8_t *tx_port;
 	uint8_t	rx_pin;
-	uint8_t rx_port;
+	uint8_t *rx_port;
 };
 
 typedef enum {

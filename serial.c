@@ -6,10 +6,16 @@
 
 #include <avr/io.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "serial.h"
 
 #define NUM_SPEED		   5 
-#define PRESCALER_DIVISOR   16
+#define PRESCALAR_DIVISOR   16
+
+#ifndef F_CPU
+#define F_CPU 20000000
+#endif
 
 /************************************************************************
  * File global variables
@@ -17,16 +23,23 @@
 
 static uint8_t connection_state = SERIAL_NOT_INITIALISED;
 
-struct {
+struct buffer {
 	uint8_t lock;
 	uint8_t *data;
 	uint8_t top;
-} buffer;
+	uint8_t dirty;
+};
 
-static buffer rx_buffer = {0, NULL, 0};
-static buffer tx_buffer = {0, NULL, 0};
+static struct buffer rx_buffer = {0, NULL, 0, 0};
+static struct buffer tx_buffer = {0, NULL, 0, 0};
 
 static struct serial_config my_config;
+
+volatile uint8_t rx_bit_counter = 0;
+volatile uint8_t tx_bit_counter = 0;
+volatile uint8_t rx_byte = 0;
+volatile uint8_t tx_byte = 0;
+
 
 /************************************************************************
  * Private functions
@@ -86,6 +99,16 @@ static return_code_t setup_io(
 
 }
 
+/************************************************************************
+ * move_connection_state: change connection state to a new state
+ *
+ * Parameters:
+ *		uint8_t	src_state	State to move from
+ *		uint8_t	dst_state	State to move to
+ * 
+ * Actual state values are defined in serial.h
+ ************************************************************************/
+
 static void move_connection_state(uint8_t src_state, uint8_t dst_state)
 {
 
@@ -94,19 +117,40 @@ static void move_connection_state(uint8_t src_state, uint8_t dst_state)
 
 }
 
+/************************************************************************
+ * send_data_bit: set the tx pin to a new data bit
+ *
+ * Parameters:
+ *		uint8_t	bit	The data bit to send
+ ************************************************************************/
+
 static void send_data_bit(uint8_t bit)
 {
 
 		switch(tx_byte & (1 << bit)) {
 			case 1:
-				*tx_port |= (1 << tx_bit);
+				*(my_config.tx_port) |= (1 << my_config.tx_pin);
 				break;
 			case 0:
-				*tx_port &= ~(1 << tx_bit);
+				*(my_config.tx_port) &= ~(1 << my_config.tx_pin);
+				break;
 
 		}
 
 }
+
+/************************************************************************
+ * shift_buffer_down: shift out lowest byte of a buffer, with locking
+ *
+ * Parameters:
+ *		struct buffer *buffer	The subject buffer
+ *
+ * Returns:
+ *		1 on success
+ *		0 if buffer was locked
+ *
+ * New top+1 byte is set to 0
+ ************************************************************************/
 
 uint8_t shift_buffer_down(struct buffer *buffer)
 {
@@ -130,17 +174,42 @@ uint8_t shift_buffer_down(struct buffer *buffer)
 
 }
 
+static void store_data(struct buffer *buffer, uint8_t data)
+{
+
+	buffer->lock = 1;
+
+	if (buffer->top < RX_BUFFER_SIZE) {
+
+		buffer->data[(buffer->top)++] = data;
+
+	} else {
+
+		// Drat
+		(buffer->top)--;
+		move_connection_state(
+			SERIAL_RECEIVING_DATA,
+			SERIAL_RECEIVE_OVERFLOW
+		);
+	}
+
+	buffer->lock = 0;
+
+}
+
+static uint8_t connection_state_is(uint8_t expected_state)
+{
+
+	return connection_state & expected_state;
+
+}
+
 /************************************************************************
  * Timer1 Compare Match A interrupt - main polling / transmit routine
  *
  * This function is fairly large, as it does essentially all the work of 
  * this library.
  ************************************************************************/
-
-volatile uint8_t rx_bit_counter = 0;
-volatile uint8_t tx_bit_counter = 0;
-volatile uint8_t rx_byte = 0;
-volatile uint8_t tx_byte = 0;
 
 ISR(TIM1_COMPA_vect)
 {
@@ -149,7 +218,7 @@ ISR(TIM1_COMPA_vect)
 	if (connection_state_is(SERIAL_RECEIVED_START_BIT)) {
 
 		// First data bit
-		if (bit_is_set(*rx_port, rx_pin))
+		if (bit_is_set(*(my_config.rx_port), my_config.rx_pin))
 			rx_byte |= (1 << rx_bit_counter);	
 		rx_bit_counter++;
 		move_connection_state(
@@ -161,7 +230,7 @@ ISR(TIM1_COMPA_vect)
 	} else if (connection_state_is(SERIAL_RECEIVING_DATA)) {
 	
 		// Subsequent data bits or stop bit
-		switch (rx_byte_counter) {
+		switch (rx_bit_counter) {
 
 			case 8:
 
@@ -170,19 +239,19 @@ ISR(TIM1_COMPA_vect)
 				// with access, and shifting bytes out of the buffer is 
 				// done in the bottom handler of this interrupt, we can
 				// be sure no one else is accessing the buffer
-				if (bit_is_set(*rx_port, rx_pin)) {
+				if (bit_is_set(*(my_config.rx_port), my_config.rx_pin)) {
 					rx_bit_counter = 0;
-					store_data(*rx_buffer, rx_byte);
+					store_data(&rx_buffer, rx_byte);
 					rx_byte = 0;
 					move_connection_state(
 						SERIAL_RECEIVING_DATA,
-						SERIAL_IDLE,
+						SERIAL_IDLE
 					);
 				} else {
 					// Weird - no stop bit after 8 data bits. Reset connection
 					move_connection_state(
 						SERIAL_RECEIVING_DATA,
-						SERIAL_IDLE,
+						SERIAL_IDLE
 					);
 
 				}
@@ -191,7 +260,7 @@ ISR(TIM1_COMPA_vect)
 			default:
 
 				// Normal data bit
-				if (bit_is_set(*rx_port, rx_pin))
+				if (bit_is_set(*(my_config.rx_port), my_config.rx_pin))
 					rx_byte |= (1 << rx_bit_counter);	
 				rx_bit_counter++;
 
@@ -201,7 +270,7 @@ ISR(TIM1_COMPA_vect)
 	} else {
 
 		// Not receiving anything right now. Check for start bit
-		if (bit_is_clear(*rx_port, rx_pin))
+		if (bit_is_clear(*(my_config.rx_port), my_config.rx_pin))
 			move_connection_state(
 				SERIAL_IDLE,
 				SERIAL_RECEIVED_START_BIT
@@ -227,10 +296,10 @@ ISR(TIM1_COMPA_vect)
 		if (tx_bit_counter == 8) {
 
 			// Stop bit
-			*tx_port |=(1 << tx_bit);
+			*(my_config.tx_port) |=(1 << my_config.tx_pin);
 
 			// Try to shift out the sent byte
-			if (shift_buffer_down(*tx_buffer)) {
+			if (shift_buffer_down(&tx_buffer)) {
 				move_connection_state(
 					SERIAL_SENDING_DATA,
 					SERIAL_IDLE
@@ -253,7 +322,7 @@ ISR(TIM1_COMPA_vect)
 	} else if (connection_state_is(SERIAL_TX_BUFFER_LOCKED)) {
 
 		// Keep trying to shift TX buffer
-		if (shift_buffer_down(*tx_buffer)) {
+		if (shift_buffer_down(&tx_buffer)) {
 			move_connection_state(
 				SERIAL_SENDING_DATA,
 				SERIAL_IDLE
@@ -262,11 +331,12 @@ ISR(TIM1_COMPA_vect)
 
 	} else {
 
-		// Not sending anything. Check for byte to send
+		// Not sending anything. Check for byte to send. Not using dirty
+		// flag as top != 0 means the same thing for TX buffer
 		if (tx_buffer.top) {
 
 			// New data
-			*tx_port &= ~(1 << tx_bit);  // Start bit
+			*(my_config.tx_port) &= ~(1 << my_config.tx_pin);  // Start bit
 			tx_byte = tx_buffer.data[0];
 			tx_bit_counter = 0;
 			move_connection_state(
@@ -279,11 +349,14 @@ ISR(TIM1_COMPA_vect)
 	}
 
 
-	// Bottom handlers. Lock is used as a 'please shift' flag.
-	if (rx_buffer.lock) {
-		// shift out byte
-		// To write	
+	// Bottom handler: RX buffer 
+	if (rx_buffer.dirty) {
+
+		shift_buffer_down(&rx_buffer);
+		rx_buffer.dirty = 0;
+
 	}
+
 }
 
 /************************************************************************
@@ -342,10 +415,10 @@ extern return_code_t serial_initialise(struct serial_config *config)
 	if (setup_io(config->rx_port, config->rx_pin, SERIAL_DIR_RX) != SERIAL_OK)
 		return SERIAL_ERROR;
 
-	my_config.rx_port = rx_port;
-	my_config.rx_pin = rx_pin;
-	my_config.tx_port = tx_port;
-	my_config.tx_pin = tx_pin;
+	my_config.rx_port = config->rx_port;
+	my_config.rx_pin = config->rx_pin;
+	my_config.tx_port = config->tx_port;
+	my_config.tx_pin = config->tx_pin;
 
 	// Setup interrupt: Compare Match A interrupt Timer1
 	TIMSK |= (1 << OCIE1A);	
@@ -365,10 +438,4 @@ extern return_code_t serial_initialise(struct serial_config *config)
 
 }
 
-extern uint8_t connection_state_is(uint8_t expected_state)
-{
-
-	return connection_state & expected_state;
-
-}
 
