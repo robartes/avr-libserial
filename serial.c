@@ -256,6 +256,9 @@ static uint8_t connection_state_is(uint8_t expected_state)
 
 ISR(TIM1_COMPA_vect)
 {
+	
+	// Testing
+	PORTB ^= (1 << PB0);
 
 	// RX
 	if (connection_state_is(SERIAL_RECEIVED_START_BIT)) {
@@ -511,6 +514,9 @@ extern return_code_t serial_initialise(struct serial_config *config)
 	TCCR1 |= (1 << CS12 | 1 << CS10);
 
 	connection_state = SERIAL_IDLE;
+
+	// Let's go
+	sei();
 
 	return SERIAL_OK;
 

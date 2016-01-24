@@ -8,6 +8,8 @@
 int main(void) 
 {
 
+	DDRB |= (1 << PB0);
+
 	struct serial_config test_config = {
 		SERIAL_SPEED_9600,	// speed
 		PB1,				// TX pin
