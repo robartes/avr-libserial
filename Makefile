@@ -18,7 +18,7 @@
 # FUSES ........ Parameters for avrdude to flash the fuses appropriately.
 
 DEVICE     = attiny85      
-OBJECTS    = serial.o serial_test.o
+OBJECTS    = serial.o 
 # 8MHz internal clock (used for programming off board)
 FUSES      = -U lfuse:w:0xe2:m -U hfuse:w:0xdf:m -U efuse:w:0xff:m
 
