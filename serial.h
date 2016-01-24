@@ -4,18 +4,6 @@
  * AVR software serial library
  ************************************************************************/
 
-#define SERIAL_IDLE						0b00000000
-#define SERIAL_SENT_START_BIT			0b00000001
-#define SERIAL_SENDING_DATA				0b00000010
-#define SERIAL_TX_BUFFER_LOCKED			0b00000100
-#define SERIAL_RECEIVED_START_BIT		0b00001000
-#define SERIAL_RECEIVING_DATA			0b00010000
-#define SERIAL_RECEIVE_OVERFLOW			0b00100000
-
-#define SERIAL_TRANSMITTING				0b00000111
-
-#define SERIAL_NOT_INITIALISED		0b10000000
-
 #define RX_BUFFER_SIZE				64			// In bytes
 #define TX_BUFFER_SIZE				64			// In bytes
 
@@ -68,29 +56,47 @@ extern return_code_t serial_initialise(struct serial_config *config);
  * serial_put_char: send a single byte
  *
  * Parameters:
- *		struct serial_config *		Configuration structure of this connection
  *		uint8_t data		Byte to send
  *
  * Returns:
- *		uint8_t length			Length of data sent out (should be 1)
+ *		SERIAL_OK on success
+ *		SERIAL_ERROR on failure
  ************************************************************************/
 
-extern uint8_t serial_put_char(struct serial_config *config, uint8_t data);
+extern return_code_t serial_put_char(uint8_t data);
 
 /************************************************************************
- * serial_send_data
+ * serial_send_data: Send multiple byte serial data
+ *
+ * Parameters:
+ *		uint8_t *data	The data to be sent
+ * 		uint16_t length	The length of the data to be sent
+ *
+ * Returns:
+ *		Number of bytes sent. This could be less than length, as the
+ *		buffer might be full or some other error might have occured
  ************************************************************************/
 
-extern uint16_t serial_send_data(struct serial_config *config, uint8_t *data, uint16_t data_length);
+extern uint16_t serial_send_data(uint8_t *data, uint16_t data_length);
 
 /************************************************************************
- * serial_data_pending
+ * serial_data_pending: Check whether any data has been received
+ *
+ * Parameters: none
+ *
+ * Returns: 
+ *		uint16_t length	Number of bytes of data pending
  ************************************************************************/
 
-extern uint16_t serial_data_pending(struct serial_config *config);
+extern uint16_t serial_data_pending();
 
 /************************************************************************
- * serial_get_char	 
+ * serial_get_char: get a character from the receive buffer
+ *
+ * Parameters: none
+ *
+ * Returns: 
+ *		uint8_t	data	The data retrieved from the buffer
  ************************************************************************/
 
-extern uint8_t serial_get_char(struct serial_config *config);
+extern uint8_t serial_get_char()

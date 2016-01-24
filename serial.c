@@ -17,6 +17,21 @@
 #define F_CPU 20000000
 #endif
 
+// Status codes
+#define SERIAL_IDLE						0b00000000
+#define SERIAL_SENT_START_BIT			0b00000001
+#define SERIAL_SENDING_DATA				0b00000010
+#define SERIAL_TX_BUFFER_LOCKED			0b00000100
+#define SERIAL_RECEIVED_START_BIT		0b00001000
+#define SERIAL_RECEIVING_DATA			0b00010000
+#define SERIAL_RECEIVE_OVERFLOW			0b00100000
+
+#define SERIAL_TRANSMITTING				0b00000111
+
+#define SERIAL_NOT_INITIALISED		0b10000000
+
+
+
 /************************************************************************
  * File global variables
  ************************************************************************/
@@ -26,7 +41,7 @@ static uint8_t connection_state = SERIAL_NOT_INITIALISED;
 struct buffer {
 	uint8_t lock;
 	uint8_t *data;
-	uint8_t top;
+	uint16_t top;		// Top: points to where next byte will be written
 	uint8_t dirty;
 };
 
@@ -146,16 +161,16 @@ static void send_data_bit(uint8_t bit)
  *		struct buffer *buffer	The subject buffer
  *
  * Returns:
- *		1 on success
- *		0 if buffer was locked
+ *		SERIAL_OK on success
+ *		SERIAL_ERROR if buffer was locked
  *
  * New top+1 byte is set to 0
  ************************************************************************/
 
-uint8_t shift_buffer_down(struct buffer *buffer)
+static return_code_t shift_buffer_down(struct buffer *buffer)
 {
 
-	uint8_t retval = 0;
+	return_code_t retval = SERIAL_ERROR;
 	uint8_t i = 0;
 
 	if (!buffer->lock) {
@@ -166,7 +181,7 @@ uint8_t shift_buffer_down(struct buffer *buffer)
 		}
 		buffer->data[(buffer->top)--] = 0;
 		buffer->lock = 0;
-		retval = 1;
+		retval = SERIAL_OK;
 
 	}
 
@@ -174,8 +189,22 @@ uint8_t shift_buffer_down(struct buffer *buffer)
 
 }
 
-static void store_data(struct buffer *buffer, uint8_t data)
+/************************************************************************
+ * store_data: store a byte in the receive buffer
+ *
+ * Parameters:
+ *		struct buffer *buffer	The receive buffer
+ *
+ * Returns:
+ *		SERIAL_OK on success
+ *		SERIAL_ERROR on failure
+ * Sets SERIAL_RECEIVE_OVERFLOW on overflow
+ ************************************************************************/
+
+static return_code_t store_data(struct buffer *buffer, uint8_t data)
 {
+
+	return_code_t retval = SERIAL_OK;
 
 	buffer->lock = 1;
 
@@ -191,12 +220,25 @@ static void store_data(struct buffer *buffer, uint8_t data)
 			SERIAL_RECEIVING_DATA,
 			SERIAL_RECEIVE_OVERFLOW
 		);
+		retval = SERIAL_ERROR;
 	}
 
 	buffer->lock = 0;
 
+	return retval;
+
 }
 
+/************************************************************************
+ * connection_state_is: check connection state
+ *
+ * Parameters:
+ *		uint8_t expected_state	The expected connection state
+ * 
+ * Checks whether the serial connection state is in the state
+ * expected_state
+ ************************************************************************/
+ 
 static uint8_t connection_state_is(uint8_t expected_state)
 {
 
@@ -299,7 +341,7 @@ ISR(TIM1_COMPA_vect)
 			*(my_config.tx_port) |=(1 << my_config.tx_pin);
 
 			// Try to shift out the sent byte
-			if (shift_buffer_down(&tx_buffer)) {
+			if (shift_buffer_down(&tx_buffer) == SERIAL_OK) {
 				move_connection_state(
 					SERIAL_SENDING_DATA,
 					SERIAL_IDLE
@@ -322,7 +364,7 @@ ISR(TIM1_COMPA_vect)
 	} else if (connection_state_is(SERIAL_TX_BUFFER_LOCKED)) {
 
 		// Keep trying to shift TX buffer
-		if (shift_buffer_down(&tx_buffer)) {
+		if (shift_buffer_down(&tx_buffer) == SERIAL_OK) {
 			move_connection_state(
 				SERIAL_SENDING_DATA,
 				SERIAL_IDLE
@@ -356,6 +398,41 @@ ISR(TIM1_COMPA_vect)
 		rx_buffer.dirty = 0;
 
 	}
+
+}
+
+/************************************************************************
+ * acquire_buffer_lock		Buffer locking functions
+ * release_buffer_lock
+ *
+ * Parameters:
+ * 		struct buffer *buffer	The buffer to be locked / released
+ * 
+ * These functions lock, resp. unlock a buffer. These are not intended
+ * to be called from interrupt, only from the non-interrupt functions
+ ************************************************************************/
+
+static void acquire_buffer_lock(struct buffer *buffer)
+{
+
+	// Spin for lock
+	while(buffer->lock);
+
+	// Temporarily disable interrupts to make sure we are not 
+	// bothered while setting the lock
+	cli();
+	buffer->lock = 1;
+	sei();
+
+}
+
+static void release_buffer_lock(struct buffer *buffer)
+{
+
+	// No need to disable interrupts here. Interrupts never return
+	// leaving a lock of their own doing set, so no risk of accidentally
+	// unlocking a buffer that should stay locked
+	buffer->lock = 0;
 
 }
 
@@ -438,4 +515,100 @@ extern return_code_t serial_initialise(struct serial_config *config)
 
 }
 
+/************************************************************************
+ * serial_put_char: send a single byte
+ *
+ * Parameters:
+ *		uint8_t data		Byte to send
+ *
+ * Returns:
+ *		SERIAL_OK on success
+ *		SERIAL_ERROR on failure
+ *
+ *
+ * Please not that this function blocks on lock. However, having a TX
+ * buffer locked here should not normally happen, as the interrupt that
+ * could lock it does not return unless it is unlocked again.
+ ************************************************************************/
 
+extern return_code_t serial_put_char(uint8_t data)
+{
+
+	return_code_t retval = SERIAL_ERROR;
+
+	acquire_buffer_lock(&tx_buffer);
+	if (tx_buffer.top < TX_BUFFER_SIZE) {
+		tx_buffer.data[++(tx_buffer.top)] = data;
+		retval = SERIAL_OK;
+	}
+	release_buffer_lock(&tx_buffer);
+
+}
+
+/************************************************************************
+ * serial_send_data: Send multiple byte serial data
+ *
+ * Parameters:
+ *		uint8_t *data	The data to be sent
+ * 		uint16_t length	The length of the data to be sent
+ *
+ * Returns:
+ *		Number of bytes sent out. This could be less than length, as the
+ *		buffer might be full or some other error might have occured
+ ************************************************************************/
+
+extern uint16_t serial_send_data(uint8_t *data, uint16_t data_length)
+{
+
+	uint16_t i;
+
+	for (i = 0; i < data_length; i++) {
+
+		if (serial_put_char(data[i]) == SERIAL_ERROR) 
+			break;
+
+	}
+
+	return i;
+
+}
+
+/************************************************************************
+ * serial_data_pending: Check whether any data has been received
+ *
+ * Parameters: none
+ *
+ * Returns: 
+ *		uint16_t length	Number of bytes of data pending
+ ************************************************************************/
+
+extern uint16_t serial_data_pending()
+{
+
+	return tx_buffer.top;
+
+}
+
+/************************************************************************
+ * serial_get_char: get a character from the receive buffer
+ *
+ * Parameters: none
+ *
+ * Returns: 
+ *		uint8_t	data	The data retrieved from the buffer
+ ************************************************************************/
+
+extern uint8_t serial_get_char()
+{
+
+	uint8_t my_data;
+
+	// Spin on dirty buffer
+	while(rx_buffer.dirty);
+
+	my_data = rx_buffer.data[0];  	// FIFO: always read from the front
+	rx_buffer.dirty = 1;		// Signal bottom handler to shift data
+
+	return my_data;
+
+}
