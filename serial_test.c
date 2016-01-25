@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <avr/io.h>
+#include <avr/delay.h>
 
 #include "serial.h"
 
@@ -21,13 +22,19 @@ int main(void)
 	if (serial_initialise(&test_config) == SERIAL_OK) {
 
 		// Test 1: do nothing to check timer frequency with scope
-		while (1);
+		while (0);
 
 		// Test 2: write single character
-		serial_put_char(65);
+		while (0) {
+			serial_put_char(0x61);
+			_delay_ms(100);
+		}
 
 		// Test 3: write more characters
-		serial_send_data("Bits of sand", 12);
+		while (1) {
+			serial_send_data("Bits of sand", 12);
+			_delay_ms(100);
+		}
 
 	}
 
