@@ -144,13 +144,12 @@ static void send_data_bit(uint8_t bit)
 {
 
 		switch(tx_byte & (1 << bit)) {
-			case 1:
-				*(my_config.tx_port) |= (1 << my_config.tx_pin);
-				break;
 			case 0:
 				*(my_config.tx_port) &= ~(1 << my_config.tx_pin);
 				break;
-
+			default:		// Not case 1 (it's only 1 for bit 0 set)
+				*(my_config.tx_port) |= (1 << my_config.tx_pin);
+				break;
 		}
 
 }
@@ -467,7 +466,9 @@ static void release_buffer_lock(struct buffer *buffer)
 extern return_code_t serial_initialise(struct serial_config *config)
 {
 
-	uint32_t serial_speeds[NUM_SPEED] = {9600, 19200, 38400, 57600, 115200};
+	// Values below are for 8 MHz
+	uint8_t timer_ocr_values[NUM_SPEED] = {51, 25, 12, 8, 3};
+
 	uint8_t *rxd;
 	uint8_t *txd;
 
@@ -504,13 +505,16 @@ extern return_code_t serial_initialise(struct serial_config *config)
 	// Setup timer
 	// CTC Mode (clear on reaching OCR1C)
 	TCCR1 |= (1 << CTC1); 
-	OCR1A = OCR1C = (uint8_t) (F_CPU / PRESCALAR_DIVISOR / serial_speeds[config->speed]) - 1;
+	OCR1A = OCR1C = timer_ocr_values[config->speed];
 
 	// Start timer. /16 prescaler - datasheet p.89 table 12-5
 	TCCR1 &= ~(1 << CS13 | 1 << CS12 | 1 << CS11 | 1 << CS10);
 	TCCR1 |= (1 << CS12 | 1 << CS10);
 
 	connection_state = SERIAL_IDLE;
+
+	// Let's go
+	sei();
 
 	return SERIAL_OK;
 
@@ -539,7 +543,7 @@ extern return_code_t serial_put_char(uint8_t data)
 
 	acquire_buffer_lock(&tx_buffer);
 	if (tx_buffer.top < TX_BUFFER_SIZE) {
-		tx_buffer.data[++(tx_buffer.top)] = data;
+		tx_buffer.data[(tx_buffer.top)++] = data;
 		retval = SERIAL_OK;
 	}
 	release_buffer_lock(&tx_buffer);
