@@ -89,7 +89,7 @@ static return_code_t setup_io(
 {
 
 	// Sanity checks
-	if (port != &PORTB) 
+	if (port != &PORTB && port != &PINB) 
 		return SERIAL_ERROR;
 
 	if (pin > 5)
@@ -256,8 +256,6 @@ static uint8_t connection_state_is(uint8_t expected_state)
 ISR(TIM1_COMPA_vect)
 {
 	
-	// Testing
-	PORTB ^= (1 << PB0);
 
 	// RX
 	if (connection_state_is(SERIAL_RECEIVED_START_BIT)) {
@@ -314,6 +312,8 @@ ISR(TIM1_COMPA_vect)
 
 	} else {
 
+		// Canary
+		PORTB ^= (1 << PB0);
 		// Not receiving anything right now. Check for start bit
 		if (bit_is_clear(*(my_config.rx_port), my_config.rx_pin))
 			move_connection_state(

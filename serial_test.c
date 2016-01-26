@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 #include <avr/io.h>
-#include <avr/delay.h>
+#include <util/delay.h>
 
 #include "serial.h"
 
@@ -16,7 +16,7 @@ int main(void)
 		PB1,				// TX pin
 		&PORTB,				// TX port
 		PB2,				// RX pin
-		&PORTB				// RX port
+		&PINB				// RX port
 	};
 
 	if (serial_initialise(&test_config) == SERIAL_OK) {
@@ -31,9 +31,15 @@ int main(void)
 		}
 
 		// Test 3: write more characters
-		while (1) {
+		while (0) {
 			serial_send_data("Bits of sand", 12);
 			_delay_ms(100);
+		}
+
+		// Test 4: two way communication
+		//while (serial_data_pending()) {
+		while (1) {
+			serial_put_char(serial_get_char());	
 		}
 
 	}
