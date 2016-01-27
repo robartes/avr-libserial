@@ -89,7 +89,7 @@ static return_code_t setup_io(
 {
 
 	// Sanity checks
-	if (port != &PORTB) 
+	if (port != &PORTB && port != &PINB) 
 		return SERIAL_ERROR;
 
 	if (pin > 5)
@@ -143,13 +143,10 @@ static void move_connection_state(uint8_t src_state, uint8_t dst_state)
 static void send_data_bit(uint8_t bit)
 {
 
-		switch(tx_byte & (1 << bit)) {
-			case 0:
-				*(my_config.tx_port) &= ~(1 << my_config.tx_pin);
-				break;
-			default:		// Not case 1 (it's only 1 for bit 0 set)
+		if (tx_byte & (1 << bit)) {
 				*(my_config.tx_port) |= (1 << my_config.tx_pin);
-				break;
+		} else {
+				*(my_config.tx_port) &= ~(1 << my_config.tx_pin);
 		}
 
 }
@@ -204,23 +201,22 @@ static return_code_t shift_buffer_down(struct buffer *buffer)
 static return_code_t store_data(struct buffer *buffer, uint8_t data)
 {
 
-	return_code_t retval = SERIAL_OK;
+	return_code_t retval = SERIAL_ERROR;
 
 	buffer->lock = 1;
 
 	if (buffer->top < RX_BUFFER_SIZE) {
 
 		buffer->data[(buffer->top)++] = data;
+		retval = SERIAL_OK;
 
 	} else {
 
 		// Drat
-		(buffer->top)--;
 		move_connection_state(
 			SERIAL_RECEIVING_DATA,
 			SERIAL_RECEIVE_OVERFLOW
 		);
-		retval = SERIAL_ERROR;
 	}
 
 	buffer->lock = 0;
@@ -255,14 +251,14 @@ static uint8_t connection_state_is(uint8_t expected_state)
 
 ISR(TIM1_COMPA_vect)
 {
+	
 
 	// RX
 	if (connection_state_is(SERIAL_RECEIVED_START_BIT)) {
 
 		// First data bit
 		if (bit_is_set(*(my_config.rx_port), my_config.rx_pin))
-			rx_byte |= (1 << rx_bit_counter);	
-		rx_bit_counter++;
+			rx_byte |= (1 << rx_bit_counter++);	
 		move_connection_state(
 			SERIAL_RECEIVED_START_BIT,
 			SERIAL_RECEIVING_DATA 
