@@ -89,7 +89,7 @@ static return_code_t setup_io(
 {
 
 	// Sanity checks
-	if (port != &PORTB) 
+	if (port != &PORTB && port != &PINB) 
 		return SERIAL_ERROR;
 
 	if (pin > 5)
