@@ -258,7 +258,8 @@ ISR(TIM1_COMPA_vect)
 
 		// First data bit
 		if (bit_is_set(*(my_config.rx_port), my_config.rx_pin))
-			rx_byte |= (1 << rx_bit_counter++);	
+			rx_byte |= (1 << rx_bit_counter);	
+		rx_bit_counter++;
 		move_connection_state(
 			SERIAL_RECEIVED_START_BIT,
 			SERIAL_RECEIVING_DATA 
@@ -588,7 +589,7 @@ extern uint16_t serial_send_data(char *data, uint16_t data_length)
 extern uint16_t serial_data_pending()
 {
 
-	return tx_buffer.top;
+	return rx_buffer.top;
 
 }
 
