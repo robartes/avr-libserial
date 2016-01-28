@@ -258,7 +258,8 @@ ISR(TIM1_COMPA_vect)
 
 		// First data bit
 		if (bit_is_set(*(my_config.rx_port), my_config.rx_pin))
-			rx_byte |= (1 << rx_bit_counter++);	
+			rx_byte |= (1 << rx_bit_counter);	
+		rx_bit_counter++;
 		move_connection_state(
 			SERIAL_RECEIVED_START_BIT,
 			SERIAL_RECEIVING_DATA 
@@ -272,6 +273,8 @@ ISR(TIM1_COMPA_vect)
 
 			case 8:
 
+		// Canary
+		PORTB ^= (1 << PB0);
 				// Stop bit. If received, load data into
 				// the receive buffer. As this library is the only one
 				// with access, and shifting bytes out of the buffer is 
@@ -299,15 +302,14 @@ ISR(TIM1_COMPA_vect)
 
 				// Normal data bit
 				if (bit_is_set(*(my_config.rx_port), my_config.rx_pin))
-					rx_byte |= (1 << rx_bit_counter++);	
+					rx_byte |= (1 << rx_bit_counter);	
+				rx_bit_counter++;
 
 				break;
 		}
 
 	} else {
 
-		// Canary
-		PORTB ^= (1 << PB0);
 		// Not receiving anything right now. Check for start bit
 		if (bit_is_clear(*(my_config.rx_port), my_config.rx_pin))
 			move_connection_state(
@@ -589,7 +591,7 @@ extern uint16_t serial_send_data(char *data, uint16_t data_length)
 extern uint16_t serial_data_pending()
 {
 
-	return tx_buffer.top;
+	return rx_buffer.top;
 
 }
 

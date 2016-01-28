@@ -39,7 +39,9 @@ int main(void)
 		// Test 4: two way communication
 		//while (serial_data_pending()) {
 		while (1) {
-			serial_put_char(serial_get_char());	
+			if (serial_data_pending())
+				serial_put_char(serial_get_char());	
+				_delay_ms(100);
 		}
 
 	}
