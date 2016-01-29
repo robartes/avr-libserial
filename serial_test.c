@@ -33,7 +33,6 @@ int main(void)
 		// Test 3: write more characters
 		while (0) {
 			serial_send_data("Bits of sand", 12);
-			_delay_ms(100);
 		}
 
 		// Test 4: two way communication
