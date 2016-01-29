@@ -18,6 +18,8 @@
 #define F_CPU 20000000
 #endif
 
+#include <util/delay.h>
+
 // Status codes
 #define SERIAL_IDLE						0b00000000
 #define SERIAL_SENT_START_BIT			0b00000001
@@ -609,8 +611,12 @@ extern uint8_t serial_get_char()
 
 	uint8_t my_data;
 
-	// Spin on dirty buffer
-	while(rx_buffer.dirty);
+	// Spin on dirty buffer. Don't just use an empty loop or gcc optimises
+	// it away. Wait time is just over 1 interrupt interval at 9600 baud, so should
+	// spin at most once
+	while(rx_buffer.dirty) 
+		_delay_us(120);
+
 
 	my_data = rx_buffer.data[0];  	// FIFO: always read from the front
 	rx_buffer.dirty = 1;		// Signal bottom handler to shift data
