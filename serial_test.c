@@ -11,15 +11,7 @@ int main(void)
 
 	DDRB |= (1 << PB0);
 
-	struct serial_config test_config = {
-		SERIAL_SPEED_9600,	// speed
-		PB1,				// TX pin
-		&PORTB,				// TX port
-		PB2,				// RX pin
-		&PINB				// RX port
-	};
-
-	if (serial_initialise(&test_config) == SERIAL_OK) {
+	if (serial_initialise() == SERIAL_OK) {
 
 		// Test 1: do nothing to check timer frequency with scope
 		while (0);
