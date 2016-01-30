@@ -14,14 +14,6 @@
 #define NUM_SPEED		   5 
 #define PRESCALER_DIVISOR   16
 
-#ifndef F_CPU
-#define F_CPU 20000000
-#endif
-
-#define TIMER_OCR_VALUE		(uint8_t) F_CPU / PRESCALER_DIVISOR / SERIAL_SPEED 
-
-#include <util/delay.h>
-
 // Status codes
 #define SERIAL_IDLE						0b00000000
 #define SERIAL_SENT_START_BIT			0b00000001
@@ -253,8 +245,9 @@ static uint8_t connection_state_is(uint8_t expected_state)
 
 ISR(TIM1_COMPA_vect)
 {
-	// Canary	
-	PORTB ^= (1 << PB0);
+
+		// Canary
+		PORTB ^= (1 << PB0);
 
 	// RX
 	if (connection_state_is(SERIAL_RECEIVED_START_BIT)) {
@@ -465,6 +458,9 @@ static void release_buffer_lock(volatile struct buffer *buffer)
 extern return_code_t serial_initialise()
 {
 
+	// Values below are for 8 MHz
+	uint8_t timer_ocr_values[NUM_SPEED] = {51, 25, 12, 8, 3};
+
 	uint8_t *rxd;
 	uint8_t *txd;
 
@@ -496,10 +492,9 @@ extern return_code_t serial_initialise()
 	// Setup timer
 	// CTC Mode (clear on reaching OCR1C)
 	TCCR1 |= (1 << CTC1); 
-	OCR1A = TIMER_OCR_VALUE;
-	OCR1C = TIMER_OCR_VALUE;
+	OCR1A = OCR1C = timer_ocr_values[SERIAL_SPEED];
 
-	// Start timer. /8 prescaler - datasheet p.89 table 12-5
+	// Start timer. /16 prescaler - datasheet p.89 table 12-5
 	TCCR1 &= ~(1 << CS13 | 1 << CS12 | 1 << CS11 | 1 << CS10);
 	TCCR1 |= (1 << CS12 | 1 << CS10);
 
@@ -577,8 +572,7 @@ static void wait_buffer_clean(void) {
 	// Spin on dirty buffer. Don't just use an empty loop or gcc optimises
 	// it away. Wait time is just over 1 interrupt interval at 9600 baud, so should
 	// spin at most once
-	while(rx_buffer.dirty) 
-		_delay_us(120);
+	while(rx_buffer.dirty);
 
 }
 

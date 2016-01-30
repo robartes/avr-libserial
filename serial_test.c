@@ -13,26 +13,30 @@ int main(void)
 
 	if (serial_initialise() == SERIAL_OK) {
 
-		// Test 1: do nothing to check timer frequency with scope
-		while (0);
+		// Test 1: canary test
+		while (0) {
+		}
 
 		// Test 2: write single character
 		while (0) {
-			serial_put_char(0x61);
+			serial_put_char(0x55);
 			_delay_ms(100);
 		}
 
 		// Test 3: write more characters
 		while (0) {
 			serial_send_data("Bits of sand", 12);
+			_delay_ms(100);
 		}
 
 		// Test 4: two way communication
 		//while (serial_data_pending()) {
 		while (1) {
-			if (serial_data_pending())
+			if (serial_data_pending()) {
+
 				serial_put_char(serial_get_char());	
 				_delay_ms(100);
+			}
 		}
 
 	}
