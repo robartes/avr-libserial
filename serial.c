@@ -12,11 +12,13 @@
 #include <avr/interrupt.h>
 
 #define NUM_SPEED		   5 
-#define PRESCALAR_DIVISOR   16
+#define PRESCALER_DIVISOR   16
 
 #ifndef F_CPU
 #define F_CPU 20000000
 #endif
+
+#define TIMER_OCR_VALUE		(uint8_t) F_CPU / PRESCALER_DIVISOR / SERIAL_SPEED 
 
 #include <util/delay.h>
 
@@ -50,8 +52,6 @@ struct buffer {
 
 static volatile struct buffer rx_buffer = {0, NULL, 0, 0};
 static volatile struct buffer tx_buffer = {0, NULL, 0, 0};
-
-static struct serial_config my_config;
 
 volatile uint8_t rx_bit_counter = 0;
 volatile uint8_t tx_bit_counter = 0;
@@ -146,9 +146,9 @@ static void send_data_bit(uint8_t bit)
 {
 
 		if (tx_byte & (1 << bit)) {
-				*(my_config.tx_port) |= (1 << my_config.tx_pin);
+				TX_PORT |= (1 << TX_PIN);
 		} else {
-				*(my_config.tx_port) &= ~(1 << my_config.tx_pin);
+				TX_PORT &= ~(1 << TX_PIN);
 		}
 
 }
@@ -254,14 +254,11 @@ static uint8_t connection_state_is(uint8_t expected_state)
 ISR(TIM1_COMPA_vect)
 {
 	
-		// Canary
-		PORTB ^= (1 << PB0);
-
 	// RX
 	if (connection_state_is(SERIAL_RECEIVED_START_BIT)) {
 
 		// First data bit
-		if (bit_is_set(*(my_config.rx_port), my_config.rx_pin))
+		if (bit_is_set(RX_PORT, RX_PIN))
 			rx_byte |= (1 << rx_bit_counter);	
 		rx_bit_counter++;
 		move_connection_state(
@@ -282,7 +279,7 @@ ISR(TIM1_COMPA_vect)
 				// with access, and shifting bytes out of the buffer is 
 				// done in the bottom handler of this interrupt, we can
 				// be sure no one else is accessing the buffer
-				if (bit_is_set(*(my_config.rx_port), my_config.rx_pin)) {
+				if (bit_is_set(RX_PORT, RX_PIN)) {
 					rx_bit_counter = 0;
 					store_data(&rx_buffer, rx_byte);
 					rx_byte = 0;
@@ -303,7 +300,7 @@ ISR(TIM1_COMPA_vect)
 			default:
 
 				// Normal data bit
-				if (bit_is_set(*(my_config.rx_port), my_config.rx_pin))
+				if (bit_is_set(RX_PORT, RX_PIN))
 					rx_byte |= (1 << rx_bit_counter);	
 				rx_bit_counter++;
 
@@ -313,7 +310,7 @@ ISR(TIM1_COMPA_vect)
 	} else {
 
 		// Not receiving anything right now. Check for start bit
-		if (bit_is_clear(*(my_config.rx_port), my_config.rx_pin))
+		if (bit_is_clear(RX_PORT, RX_PIN))
 			move_connection_state(
 				SERIAL_IDLE,
 				SERIAL_RECEIVED_START_BIT
@@ -339,7 +336,7 @@ ISR(TIM1_COMPA_vect)
 		if (tx_bit_counter == 8) {
 
 			// Stop bit
-			*(my_config.tx_port) |=(1 << my_config.tx_pin);
+			TX_PORT |=(1 << TX_PIN);
 
 			// Try to shift out the sent byte
 			if (shift_buffer_down(&tx_buffer) == SERIAL_OK) {
@@ -379,7 +376,7 @@ ISR(TIM1_COMPA_vect)
 		if (tx_buffer.top) {
 
 			// New data
-			*(my_config.tx_port) &= ~(1 << my_config.tx_pin);  // Start bit
+			TX_PORT &= ~(1 << TX_PIN);  // Start bit
 			tx_byte = tx_buffer.data[0];
 			tx_bit_counter = 0;
 			move_connection_state(
@@ -444,8 +441,7 @@ static void release_buffer_lock(volatile struct buffer *buffer)
 /************************************************************************
  * serial_initialise: set up connection
  * 
- * Parameters:
- *		  struct serial *serial   Serial config structure 
+ * Parameters: none
  *
  * Returns:
  *	  SERIAL_ERROR on error
@@ -464,11 +460,8 @@ static void release_buffer_lock(volatile struct buffer *buffer)
  ************************************************************************/
 
 
-extern return_code_t serial_initialise(struct serial_config *config)
+extern return_code_t serial_initialise()
 {
-
-	// Values below are for 8 MHz
-	uint8_t timer_ocr_values[NUM_SPEED] = {51, 25, 12, 8, 3};
 
 	uint8_t *rxd;
 	uint8_t *txd;
@@ -489,16 +482,11 @@ extern return_code_t serial_initialise(struct serial_config *config)
 	tx_buffer.data = txd;
 
 	// Setup I/O
-	if (setup_io(config->tx_port, config->tx_pin, SERIAL_DIR_TX) != SERIAL_OK)
+	if (setup_io(&TX_PORT, TX_PIN, SERIAL_DIR_TX) != SERIAL_OK)
 		return SERIAL_ERROR;
 
-	if (setup_io(config->rx_port, config->rx_pin, SERIAL_DIR_RX) != SERIAL_OK)
+	if (setup_io(&RX_PORT, RX_PIN, SERIAL_DIR_RX) != SERIAL_OK)
 		return SERIAL_ERROR;
-
-	my_config.rx_port = config->rx_port;
-	my_config.rx_pin = config->rx_pin;
-	my_config.tx_port = config->tx_port;
-	my_config.tx_pin = config->tx_pin;
 
 	// Setup interrupt: Compare Match A interrupt Timer1
 	TIMSK |= (1 << OCIE1A);	
@@ -506,9 +494,10 @@ extern return_code_t serial_initialise(struct serial_config *config)
 	// Setup timer
 	// CTC Mode (clear on reaching OCR1C)
 	TCCR1 |= (1 << CTC1); 
-	OCR1A = OCR1C = timer_ocr_values[config->speed];
+	OCR1A = TIMER_OCR_VALUE;
+	OCR1C = TIMER_OCR_VALUE;
 
-	// Start timer. /16 prescaler - datasheet p.89 table 12-5
+	// Start timer. /8 prescaler - datasheet p.89 table 12-5
 	TCCR1 &= ~(1 << CS13 | 1 << CS12 | 1 << CS11 | 1 << CS10);
 	TCCR1 |= (1 << CS12 | 1 << CS10);
 

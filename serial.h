@@ -4,25 +4,13 @@
  * AVR software serial library
  ************************************************************************/
 
+#define	TX_PORT						PORTB
+#define TX_PIN						PB1
+#define	RX_PORT						PINB
+#define	RX_PIN						PB2
+#define SERIAL_SPEED				9600		// Max 115200
 #define RX_BUFFER_SIZE				64			// In bytes
 #define TX_BUFFER_SIZE				64			// In bytes
-
-typedef enum {
-	SERIAL_SPEED_9600,
-	SERIAL_SPEED_19200,
-	SERIAL_SPEED_38400,
-	SERIAL_SPEED_57600,
-	SERIAL_SPEED_115200,
-} serial_speed_t;
-
-
-struct serial_config {
-	serial_speed_t speed;
-	uint8_t	tx_pin;
-	volatile uint8_t *tx_port;
-	uint8_t	rx_pin;
-	volatile uint8_t *rx_port;
-};
 
 typedef enum {
 	SERIAL_ERROR,
@@ -32,8 +20,7 @@ typedef enum {
 /************************************************************************
  * serial_initialise: set up connection
  * 
- * Parameters:
- *		  struct serial_config *config   Serial config structure 
+ * Parameters: none
  *
  * Returns:
  *	  ERROR on error
@@ -50,7 +37,7 @@ typedef enum {
  *  - No PCINT interrupt possible on RX pin   
  ************************************************************************/
  
-extern return_code_t serial_initialise(struct serial_config *config);
+extern return_code_t serial_initialise();
 
 /************************************************************************
  * serial_put_char: send a single byte
