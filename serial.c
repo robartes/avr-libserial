@@ -14,6 +14,8 @@
 #define NUM_SPEED		   5 
 #define PRESCALER_DIVISOR   16
 
+#include <util/delay.h>
+
 // Status codes
 #define SERIAL_IDLE						0b00000000
 #define SERIAL_SENT_START_BIT			0b00000001
@@ -42,10 +44,8 @@ struct buffer {
 	uint8_t dirty;
 };
 
-static struct buffer rx_buffer = {0, NULL, 0, 0};
-static struct buffer tx_buffer = {0, NULL, 0, 0};
-
-static struct serial_config my_config;
+static volatile struct buffer rx_buffer = {0, NULL, 0, 0};
+static volatile struct buffer tx_buffer = {0, NULL, 0, 0};
 
 volatile uint8_t rx_bit_counter = 0;
 volatile uint8_t tx_bit_counter = 0;
@@ -140,9 +140,9 @@ static void send_data_bit(uint8_t bit)
 {
 
 		if (tx_byte & (1 << bit)) {
-				*(my_config.tx_port) |= (1 << my_config.tx_pin);
+				TX_PORT |= (1 << TX_PIN);
 		} else {
-				*(my_config.tx_port) &= ~(1 << my_config.tx_pin);
+				TX_PORT &= ~(1 << TX_PIN);
 		}
 
 }
@@ -160,7 +160,7 @@ static void send_data_bit(uint8_t bit)
  * New top+1 byte is set to 0
  ************************************************************************/
 
-static return_code_t shift_buffer_down(struct buffer *buffer)
+static return_code_t shift_buffer_down(volatile struct buffer *buffer)
 {
 
 	return_code_t retval = SERIAL_ERROR;
@@ -194,7 +194,7 @@ static return_code_t shift_buffer_down(struct buffer *buffer)
  * Sets SERIAL_RECEIVE_OVERFLOW on overflow
  ************************************************************************/
 
-static return_code_t store_data(struct buffer *buffer, uint8_t data)
+static return_code_t store_data(volatile struct buffer *buffer, uint8_t data)
 {
 
 	return_code_t retval = SERIAL_ERROR;
@@ -248,12 +248,15 @@ static uint8_t connection_state_is(uint8_t expected_state)
 ISR(TIM1_COMPA_vect)
 {
 	
-
 	// RX
 	if (connection_state_is(SERIAL_RECEIVED_START_BIT)) {
 
 		// First data bit
+<<<<<<< HEAD
 		if (bit_is_set(*(my_config.rx_port), my_config.rx_pin))
+=======
+		if (bit_is_set(RX_PORT, RX_PIN))
+>>>>>>> 456c1afed132e43f819fe417fbe9db2fde89212e
 			rx_byte |= (1 << rx_bit_counter);	
 		rx_bit_counter++;
 		move_connection_state(
@@ -274,7 +277,7 @@ ISR(TIM1_COMPA_vect)
 				// with access, and shifting bytes out of the buffer is 
 				// done in the bottom handler of this interrupt, we can
 				// be sure no one else is accessing the buffer
-				if (bit_is_set(*(my_config.rx_port), my_config.rx_pin)) {
+				if (bit_is_set(RX_PORT, RX_PIN)) {
 					rx_bit_counter = 0;
 					store_data(&rx_buffer, rx_byte);
 					rx_byte = 0;
@@ -295,7 +298,7 @@ ISR(TIM1_COMPA_vect)
 			default:
 
 				// Normal data bit
-				if (bit_is_set(*(my_config.rx_port), my_config.rx_pin))
+				if (bit_is_set(RX_PORT, RX_PIN))
 					rx_byte |= (1 << rx_bit_counter);	
 				rx_bit_counter++;
 
@@ -305,7 +308,7 @@ ISR(TIM1_COMPA_vect)
 	} else {
 
 		// Not receiving anything right now. Check for start bit
-		if (bit_is_clear(*(my_config.rx_port), my_config.rx_pin))
+		if (bit_is_clear(RX_PORT, RX_PIN))
 			move_connection_state(
 				SERIAL_IDLE,
 				SERIAL_RECEIVED_START_BIT
@@ -331,7 +334,7 @@ ISR(TIM1_COMPA_vect)
 		if (tx_bit_counter == 8) {
 
 			// Stop bit
-			*(my_config.tx_port) |=(1 << my_config.tx_pin);
+			TX_PORT |=(1 << TX_PIN);
 
 			// Try to shift out the sent byte
 			if (shift_buffer_down(&tx_buffer) == SERIAL_OK) {
@@ -371,7 +374,7 @@ ISR(TIM1_COMPA_vect)
 		if (tx_buffer.top) {
 
 			// New data
-			*(my_config.tx_port) &= ~(1 << my_config.tx_pin);  // Start bit
+			TX_PORT &= ~(1 << TX_PIN);  // Start bit
 			tx_byte = tx_buffer.data[0];
 			tx_bit_counter = 0;
 			move_connection_state(
@@ -405,7 +408,7 @@ ISR(TIM1_COMPA_vect)
  * to be called from interrupt, only from the non-interrupt functions
  ************************************************************************/
 
-static void acquire_buffer_lock(struct buffer *buffer)
+static void acquire_buffer_lock(volatile struct buffer *buffer)
 {
 
 	// Spin for lock
@@ -419,7 +422,7 @@ static void acquire_buffer_lock(struct buffer *buffer)
 
 }
 
-static void release_buffer_lock(struct buffer *buffer)
+static void release_buffer_lock(volatile struct buffer *buffer)
 {
 
 	// No need to disable interrupts here. Interrupts never return
@@ -436,8 +439,7 @@ static void release_buffer_lock(struct buffer *buffer)
 /************************************************************************
  * serial_initialise: set up connection
  * 
- * Parameters:
- *		  struct serial *serial   Serial config structure 
+ * Parameters: none
  *
  * Returns:
  *	  SERIAL_ERROR on error
@@ -456,11 +458,8 @@ static void release_buffer_lock(struct buffer *buffer)
  ************************************************************************/
 
 
-extern return_code_t serial_initialise(struct serial_config *config)
+extern return_code_t serial_initialise()
 {
-
-	// Values below are for 8 MHz
-	uint8_t timer_ocr_values[NUM_SPEED] = {51, 25, 12, 8, 3};
 
 	uint8_t *rxd;
 	uint8_t *txd;
@@ -481,16 +480,11 @@ extern return_code_t serial_initialise(struct serial_config *config)
 	tx_buffer.data = txd;
 
 	// Setup I/O
-	if (setup_io(config->tx_port, config->tx_pin, SERIAL_DIR_TX) != SERIAL_OK)
+	if (setup_io(&TX_PORT, TX_PIN, SERIAL_DIR_TX) != SERIAL_OK)
 		return SERIAL_ERROR;
 
-	if (setup_io(config->rx_port, config->rx_pin, SERIAL_DIR_RX) != SERIAL_OK)
+	if (setup_io(&RX_PORT, RX_PIN, SERIAL_DIR_RX) != SERIAL_OK)
 		return SERIAL_ERROR;
-
-	my_config.rx_port = config->rx_port;
-	my_config.rx_pin = config->rx_pin;
-	my_config.tx_port = config->tx_port;
-	my_config.tx_pin = config->tx_pin;
 
 	// Setup interrupt: Compare Match A interrupt Timer1
 	TIMSK |= (1 << OCIE1A);	
@@ -498,9 +492,10 @@ extern return_code_t serial_initialise(struct serial_config *config)
 	// Setup timer
 	// CTC Mode (clear on reaching OCR1C)
 	TCCR1 |= (1 << CTC1); 
-	OCR1A = OCR1C = timer_ocr_values[config->speed];
+	OCR1A = TIMER_OCR_VALUE;
+	OCR1C = TIMER_OCR_VALUE;
 
-	// Start timer. /16 prescaler - datasheet p.89 table 12-5
+	// Start timer. /8 prescaler - datasheet p.89 table 12-5
 	TCCR1 &= ~(1 << CS13 | 1 << CS12 | 1 << CS11 | 1 << CS10);
 	TCCR1 |= (1 << CS12 | 1 << CS10);
 
@@ -573,6 +568,16 @@ extern uint16_t serial_send_data(char *data, uint16_t data_length)
 
 }
 
+static void wait_buffer_clean(void) {
+
+	// Spin on dirty buffer. Don't just use an empty loop or gcc optimises
+	// it away. Wait time is just over 1 interrupt interval at 9600 baud, so should
+	// spin at most once
+	while(rx_buffer.dirty) 
+		_delay_us(120);
+
+}
+
 /************************************************************************
  * serial_data_pending: Check whether any data has been received
  *
@@ -585,9 +590,21 @@ extern uint16_t serial_send_data(char *data, uint16_t data_length)
 extern uint16_t serial_data_pending()
 {
 
+<<<<<<< HEAD
 	return rx_buffer.top;
+=======
+	uint16_t retval = 0;
+
+	if (rx_buffer.top) {
+		wait_buffer_clean();
+		retval = rx_buffer.top;
+	}
+
+	return retval;
+>>>>>>> 456c1afed132e43f819fe417fbe9db2fde89212e
 
 }
+
 
 /************************************************************************
  * serial_get_char: get a character from the receive buffer
@@ -603,8 +620,7 @@ extern uint8_t serial_get_char()
 
 	uint8_t my_data;
 
-	// Spin on dirty buffer
-	while(rx_buffer.dirty);
+	wait_buffer_clean();
 
 	my_data = rx_buffer.data[0];  	// FIFO: always read from the front
 	rx_buffer.dirty = 1;		// Signal bottom handler to shift data
