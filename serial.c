@@ -12,11 +12,7 @@
 #include <avr/interrupt.h>
 
 #define NUM_SPEED		   5 
-#define PRESCALAR_DIVISOR   16
-
-#ifndef F_CPU
-#define F_CPU 20000000
-#endif
+#define PRESCALER_DIVISOR   16
 
 // Status codes
 #define SERIAL_IDLE						0b00000000
