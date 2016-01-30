@@ -18,6 +18,8 @@
 #define F_CPU 20000000
 #endif
 
+#include <util/delay.h>
+
 // Status codes
 #define SERIAL_IDLE						0b00000000
 #define SERIAL_SENT_START_BIT			0b00000001
@@ -46,8 +48,8 @@ struct buffer {
 	uint8_t dirty;
 };
 
-static struct buffer rx_buffer = {0, NULL, 0, 0};
-static struct buffer tx_buffer = {0, NULL, 0, 0};
+static volatile struct buffer rx_buffer = {0, NULL, 0, 0};
+static volatile struct buffer tx_buffer = {0, NULL, 0, 0};
 
 static struct serial_config my_config;
 
@@ -164,7 +166,7 @@ static void send_data_bit(uint8_t bit)
  * New top+1 byte is set to 0
  ************************************************************************/
 
-static return_code_t shift_buffer_down(struct buffer *buffer)
+static return_code_t shift_buffer_down(volatile struct buffer *buffer)
 {
 
 	return_code_t retval = SERIAL_ERROR;
@@ -198,7 +200,7 @@ static return_code_t shift_buffer_down(struct buffer *buffer)
  * Sets SERIAL_RECEIVE_OVERFLOW on overflow
  ************************************************************************/
 
-static return_code_t store_data(struct buffer *buffer, uint8_t data)
+static return_code_t store_data(volatile struct buffer *buffer, uint8_t data)
 {
 
 	return_code_t retval = SERIAL_ERROR;
@@ -252,13 +254,16 @@ static uint8_t connection_state_is(uint8_t expected_state)
 ISR(TIM1_COMPA_vect)
 {
 	
+		// Canary
+		PORTB ^= (1 << PB0);
 
 	// RX
 	if (connection_state_is(SERIAL_RECEIVED_START_BIT)) {
 
 		// First data bit
 		if (bit_is_set(*(my_config.rx_port), my_config.rx_pin))
-			rx_byte |= (1 << rx_bit_counter++);	
+			rx_byte |= (1 << rx_bit_counter);	
+		rx_bit_counter++;
 		move_connection_state(
 			SERIAL_RECEIVED_START_BIT,
 			SERIAL_RECEIVING_DATA 
@@ -408,7 +413,7 @@ ISR(TIM1_COMPA_vect)
  * to be called from interrupt, only from the non-interrupt functions
  ************************************************************************/
 
-static void acquire_buffer_lock(struct buffer *buffer)
+static void acquire_buffer_lock(volatile struct buffer *buffer)
 {
 
 	// Spin for lock
@@ -422,7 +427,7 @@ static void acquire_buffer_lock(struct buffer *buffer)
 
 }
 
-static void release_buffer_lock(struct buffer *buffer)
+static void release_buffer_lock(volatile struct buffer *buffer)
 {
 
 	// No need to disable interrupts here. Interrupts never return
@@ -576,6 +581,16 @@ extern uint16_t serial_send_data(char *data, uint16_t data_length)
 
 }
 
+static void wait_buffer_clean(void) {
+
+	// Spin on dirty buffer. Don't just use an empty loop or gcc optimises
+	// it away. Wait time is just over 1 interrupt interval at 9600 baud, so should
+	// spin at most once
+	while(rx_buffer.dirty) 
+		_delay_us(120);
+
+}
+
 /************************************************************************
  * serial_data_pending: Check whether any data has been received
  *
@@ -588,9 +603,17 @@ extern uint16_t serial_send_data(char *data, uint16_t data_length)
 extern uint16_t serial_data_pending()
 {
 
-	return tx_buffer.top;
+	uint16_t retval = 0;
+
+	if (rx_buffer.top) {
+		wait_buffer_clean();
+		retval = rx_buffer.top;
+	}
+
+	return retval;
 
 }
+
 
 /************************************************************************
  * serial_get_char: get a character from the receive buffer
@@ -606,8 +629,7 @@ extern uint8_t serial_get_char()
 
 	uint8_t my_data;
 
-	// Spin on dirty buffer
-	while(rx_buffer.dirty);
+	wait_buffer_clean();
 
 	my_data = rx_buffer.data[0];  	// FIFO: always read from the front
 	rx_buffer.dirty = 1;		// Signal bottom handler to shift data
