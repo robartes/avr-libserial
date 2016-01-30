@@ -14,8 +14,6 @@
 #define NUM_SPEED		   5 
 #define PRESCALER_DIVISOR   16
 
-#include <util/delay.h>
-
 // Status codes
 #define SERIAL_IDLE						0b00000000
 #define SERIAL_SENT_START_BIT			0b00000001
@@ -247,16 +245,12 @@ static uint8_t connection_state_is(uint8_t expected_state)
 
 ISR(TIM1_COMPA_vect)
 {
-	
+
 	// RX
 	if (connection_state_is(SERIAL_RECEIVED_START_BIT)) {
 
 		// First data bit
-<<<<<<< HEAD
-		if (bit_is_set(*(my_config.rx_port), my_config.rx_pin))
-=======
 		if (bit_is_set(RX_PORT, RX_PIN))
->>>>>>> 456c1afed132e43f819fe417fbe9db2fde89212e
 			rx_byte |= (1 << rx_bit_counter);	
 		rx_bit_counter++;
 		move_connection_state(
@@ -461,6 +455,9 @@ static void release_buffer_lock(volatile struct buffer *buffer)
 extern return_code_t serial_initialise()
 {
 
+	// Values below are for 8 MHz
+	uint8_t timer_ocr_values[NUM_SPEED] = {51, 25, 12, 8, 3};
+
 	uint8_t *rxd;
 	uint8_t *txd;
 
@@ -492,10 +489,9 @@ extern return_code_t serial_initialise()
 	// Setup timer
 	// CTC Mode (clear on reaching OCR1C)
 	TCCR1 |= (1 << CTC1); 
-	OCR1A = TIMER_OCR_VALUE;
-	OCR1C = TIMER_OCR_VALUE;
+	OCR1A = OCR1C = timer_ocr_values[SERIAL_SPEED];
 
-	// Start timer. /8 prescaler - datasheet p.89 table 12-5
+	// Start timer. /16 prescaler - datasheet p.89 table 12-5
 	TCCR1 &= ~(1 << CS13 | 1 << CS12 | 1 << CS11 | 1 << CS10);
 	TCCR1 |= (1 << CS12 | 1 << CS10);
 
@@ -570,11 +566,8 @@ extern uint16_t serial_send_data(char *data, uint16_t data_length)
 
 static void wait_buffer_clean(void) {
 
-	// Spin on dirty buffer. Don't just use an empty loop or gcc optimises
-	// it away. Wait time is just over 1 interrupt interval at 9600 baud, so should
-	// spin at most once
-	while(rx_buffer.dirty) 
-		_delay_us(120);
+	// Spin on dirty buffer.
+	while(rx_buffer.dirty);
 
 }
 
@@ -590,9 +583,6 @@ static void wait_buffer_clean(void) {
 extern uint16_t serial_data_pending()
 {
 
-<<<<<<< HEAD
-	return rx_buffer.top;
-=======
 	uint16_t retval = 0;
 
 	if (rx_buffer.top) {
@@ -601,7 +591,6 @@ extern uint16_t serial_data_pending()
 	}
 
 	return retval;
->>>>>>> 456c1afed132e43f819fe417fbe9db2fde89212e
 
 }
 
