@@ -254,6 +254,8 @@ static uint8_t connection_state_is(uint8_t expected_state)
 ISR(TIM1_COMPA_vect)
 {
 	
+		// Canary
+		PORTB ^= (1 << PB0);
 
 	// RX
 	if (connection_state_is(SERIAL_RECEIVED_START_BIT)) {
@@ -275,8 +277,6 @@ ISR(TIM1_COMPA_vect)
 
 			case 8:
 
-		// Canary
-		PORTB ^= (1 << PB0);
 				// Stop bit. If received, load data into
 				// the receive buffer. As this library is the only one
 				// with access, and shifting bytes out of the buffer is 
