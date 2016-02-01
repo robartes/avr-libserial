@@ -35,9 +35,11 @@
 
 static uint8_t connection_state = SERIAL_NOT_INITIALISED;
 
-// Timer OCR values for clock
+// Timer OCR values for clock & sample offset tresholds for RX (which are 
+// half the timer_ocr_values, plus latency)
 // Values below are for 8 MHz. They work out to twice the data speed
-static uint8_t timer_ocr_values[NUM_SPEED] = {51, 25, 12, 8, 3};
+static uint8_t timer_ocr_values[NUM_SPEED] = {52, 25, 12, 8, 3};
+static uint8_t sample_offset_treshold[NUM_SPEED] = {30, 14, 7, 5, 1};
 
 struct buffer {
 	uint8_t lock;
@@ -49,13 +51,14 @@ struct buffer {
 static volatile struct buffer rx_buffer = {0, NULL, 0, 0};
 static volatile struct buffer tx_buffer = {0, NULL, 0, 0};
 
-volatile uint8_t rx_bit_counter = 0;
-volatile uint8_t tx_bit_counter = 0;
-volatile uint8_t rx_byte = 0;
-volatile uint8_t tx_byte = 0;
-volatile uint8_t rx_phase = 0;
-volatile uint8_t tx_phase = 0;
-volatile uint8_t rx_sample_countdown = 0;
+static volatile uint8_t rx_bit_counter = 0;
+static volatile uint8_t tx_bit_counter = 0;
+static volatile uint8_t rx_byte = 0;
+static volatile uint8_t tx_byte = 0;
+static volatile uint8_t rx_phase = 0;
+static volatile uint8_t tx_phase = 0;
+static volatile uint8_t rx_sample_countdown = 0;
+static volatile uint8_t rx_start_bit_timecount = 0;
 
 
 /************************************************************************
@@ -276,18 +279,24 @@ static void disable_rx_interrupt(void) {
 ISR(PCINT0_vect)
 {
 
-	// Canary
-	PORTB ^= (1 << PB0);
+	// Save this immediately so we know what TCNT1 is now
+	// and not several clock cycles further down in the ISR
+	rx_start_bit_timecount = TCNT1;
+
+	// Canary 2
+	PORTB ^= (1 << PB4);
 
 	// Sanity check. This should be a start bit, so low
 	if (bit_is_set(RX_PORT, RX_PIN)) return;
 
 	disable_rx_interrupt();
-	
-	rx_sample_countdown = TCNT1 < ((uint8_t) (0.5 * timer_ocr_values[SERIAL_SPEED])) 
-						? 2
-						: 3
-						;
+
+	if (rx_start_bit_timecount < sample_offset_treshold[SERIAL_SPEED]) {
+		rx_sample_countdown = 2;
+	} else {
+		rx_sample_countdown = 3;
+	}
+
 
 	move_connection_state(
 		SERIAL_IDLE,
@@ -306,12 +315,18 @@ ISR(PCINT0_vect)
 ISR(TIM1_COMPA_vect)
 {
 
+	// Canary
+	PORTB ^= (1 << PB0);
+
 	// RX
 	if (connection_state_is(SERIAL_RECEIVED_START_BIT)) {
 
 		// Start sampling?
 		if (rx_sample_countdown-- == 0) {
  
+	// Canary 2
+	PORTB ^= (1 << PB4);
+
 			// Sample first bit
 			if (bit_is_set(RX_PORT, RX_PIN))
 				rx_byte |= (1 << rx_bit_counter);
@@ -326,6 +341,9 @@ ISR(TIM1_COMPA_vect)
 
 	} else if (rx_phase && connection_state_is(SERIAL_RECEIVING_DATA)) {
 	
+	// Canary 2
+	PORTB ^= (1 << PB4);
+
 		rx_phase = 0;
 
 		// Subsequent data bits or stop bit

@@ -9,7 +9,7 @@
 int main(void) 
 {
 
-	DDRB |= (1 << PB0);
+	DDRB |= (1 << PB0 | 1 << PB4);
 
 	if (serial_initialise() == SERIAL_OK) {
 
