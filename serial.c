@@ -310,7 +310,7 @@ ISR(TIM1_COMPA_vect)
 		if (rx_sample_countdown-- == 0) {
  
 			// Sample first bit
-			if (bit_is_set(RX_PORT, RX_PIN)
+			if (bit_is_set(RX_PORT, RX_PIN))
 				rx_byte |= (1 << rx_bit_counter);
 			rx_bit_counter++;
 			rx_phase = 0;
@@ -358,11 +358,11 @@ ISR(TIM1_COMPA_vect)
 				rx_bit_counter++;
 
 				break;
-		} else {
-
-			rx_phase = 1;
-
 		}
+
+	} else {
+
+		rx_phase = 1;
 
 	}  // if connection_state_is(SERIAL_RECEIVED_START_BIT)
 
