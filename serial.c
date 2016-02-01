@@ -12,7 +12,7 @@
 #include <avr/interrupt.h>
 
 #define NUM_SPEED		   5 
-#define PRESCALER_DIVISOR   16
+#define PRESCALER_DIVISOR   8
 
 // Status codes
 #define SERIAL_IDLE						0b00000000
@@ -35,6 +35,10 @@
 
 static uint8_t connection_state = SERIAL_NOT_INITIALISED;
 
+// Timer OCR values for clock
+// Values below are for 8 MHz. They work out to twice the data speed
+static uint8_t timer_ocr_values[NUM_SPEED] = {51, 25, 12, 8, 3};
+
 struct buffer {
 	uint8_t lock;
 	uint8_t *data;
@@ -49,6 +53,9 @@ volatile uint8_t rx_bit_counter = 0;
 volatile uint8_t tx_bit_counter = 0;
 volatile uint8_t rx_byte = 0;
 volatile uint8_t tx_byte = 0;
+volatile uint8_t rx_phase = 0;
+volatile uint8_t tx_phase = 0;
+volatile uint8_t rx_sample_countdown = 0;
 
 
 /************************************************************************
@@ -237,6 +244,59 @@ static uint8_t connection_state_is(uint8_t expected_state)
 }
 
 /************************************************************************
+ * (en|dis)able_rx_interrupt: start / stop RX start bit capture
+ *
+ * This starts/stops the pin change interrupt. It is running when no byte
+ * is currently being received, to capture the next start bit
+ ************************************************************************/
+ 
+static void enable_rx_interrupt(void) {
+
+	GIMSK |= (1 << PCIE);
+
+}
+
+static void disable_rx_interrupt(void) {
+
+	GIMSK &= ~(1 << PCIE);
+
+}
+
+/************************************************************************
+ * Pin change interrupt 0 ISR - capture start bit for RX
+ *
+ * This sets rx_sample_countdown to start data bit sampling some time in 
+ * the future. For Timer1 counter values smaller then half the OCR value,
+ * so when we receive the start bit in the first half of a bit cycle, we
+ * wait 2 timer cycles for sampling, for other case 3 timer cycles.
+ * In all cases, sampling after that is every other timer cycle.
+ * I should include a nice drawing of this in the documentation
+ ************************************************************************/
+
+ISR(PCINT0_vect)
+{
+
+	// Canary
+	PORTB ^= (1 << PB0);
+
+	// Sanity check. This should be a start bit, so low
+	if (bit_is_set(RX_PORT, RX_PIN)) return;
+
+	disable_rx_interrupt();
+	
+	rx_sample_countdown = TCNT1 < ((uint8_t) (0.5 * timer_ocr_values[SERIAL_SPEED])) 
+						? 2
+						: 3
+						;
+
+	move_connection_state(
+		SERIAL_IDLE,
+		SERIAL_RECEIVED_START_BIT
+	);
+
+}
+
+/************************************************************************
  * Timer1 Compare Match A interrupt - main polling / transmit routine
  *
  * This function is fairly large, as it does essentially all the work of 
@@ -246,24 +306,28 @@ static uint8_t connection_state_is(uint8_t expected_state)
 ISR(TIM1_COMPA_vect)
 {
 
-		// Canary
-		PORTB ^= (1 << PB0);
-
 	// RX
 	if (connection_state_is(SERIAL_RECEIVED_START_BIT)) {
 
-		// First data bit
-		if (bit_is_set(RX_PORT, RX_PIN))
-			rx_byte |= (1 << rx_bit_counter);	
-		rx_bit_counter++;
-		move_connection_state(
-			SERIAL_RECEIVED_START_BIT,
-			SERIAL_RECEIVING_DATA 
-		);
-			
+		// Start sampling?
+		if (rx_sample_countdown-- == 0) {
+ 
+			// Sample first bit
+			if (bit_is_set(RX_PORT, RX_PIN))
+				rx_byte |= (1 << rx_bit_counter);
+			rx_bit_counter++;
+			rx_phase = 0;
+			move_connection_state(
+				SERIAL_RECEIVED_START_BIT,
+				SERIAL_RECEIVING_DATA
+			);
 
-	} else if (connection_state_is(SERIAL_RECEIVING_DATA)) {
+		} 
+
+	} else if (rx_phase && connection_state_is(SERIAL_RECEIVING_DATA)) {
 	
+		rx_phase = 0;
+
 		// Subsequent data bits or stop bit
 		switch (rx_bit_counter) {
 
@@ -278,18 +342,15 @@ ISR(TIM1_COMPA_vect)
 					rx_bit_counter = 0;
 					store_data(&rx_buffer, rx_byte);
 					rx_byte = 0;
-					move_connection_state(
-						SERIAL_RECEIVING_DATA,
-						SERIAL_IDLE
-					);
-				} else {
-					// Weird - no stop bit after 8 data bits. Reset connection
-					move_connection_state(
-						SERIAL_RECEIVING_DATA,
-						SERIAL_IDLE
-					);
+				} // Do nothing if this is not a stop bit
+				
+				// We're done with this byte, so let's wait for the next one. No rest for the wicked
+				move_connection_state(
+					SERIAL_RECEIVING_DATA,
+					SERIAL_IDLE
+				);
+				enable_rx_interrupt();
 
-				}
 				break;
 
 			default:
@@ -304,85 +365,92 @@ ISR(TIM1_COMPA_vect)
 
 	} else {
 
-		// Not receiving anything right now. Check for start bit
-		if (bit_is_clear(RX_PORT, RX_PIN))
-			move_connection_state(
-				SERIAL_IDLE,
-				SERIAL_RECEIVED_START_BIT
-			);
+		rx_phase = 1;
 
-	}
-
+	}  // if connection_state_is(SERIAL_RECEIVED_START_BIT)
 
 	
 	// TX
-	if (connection_state_is(SERIAL_SENT_START_BIT)) {
+	switch(tx_phase) {
 
-		// Write first bit of data
-		send_data_bit(tx_bit_counter++);
-		move_connection_state(
-			SERIAL_SENT_START_BIT,
-			SERIAL_SENDING_DATA 
-		);
+		case 0:
 
-	} else if (connection_state_is(SERIAL_SENDING_DATA)) {
+			tx_phase = 1;
+			break;
 
-		// Data or stop bit
-		if (tx_bit_counter == 8) {
+		case 1: 
 
-			// Stop bit
-			TX_PORT |=(1 << TX_PIN);
+			tx_phase = 0;
+			if (connection_state_is(SERIAL_SENT_START_BIT)) {
 
-			// Try to shift out the sent byte
-			if (shift_buffer_down(&tx_buffer) == SERIAL_OK) {
+				// Write first bit of data
+				send_data_bit(tx_bit_counter++);
 				move_connection_state(
-					SERIAL_SENDING_DATA,
-					SERIAL_IDLE
+					SERIAL_SENT_START_BIT,
+					SERIAL_SENDING_DATA 
 				);
+
+			} else if (connection_state_is(SERIAL_SENDING_DATA)) {
+
+				// Data or stop bit
+				if (tx_bit_counter == 8) {
+
+					// Stop bit
+					TX_PORT |=(1 << TX_PIN);
+
+					// Try to shift out the sent byte
+					if (shift_buffer_down(&tx_buffer) == SERIAL_OK) {
+						move_connection_state(
+							SERIAL_SENDING_DATA,
+							SERIAL_IDLE
+						);
+					} else {
+						// Drat. Try again later
+						move_connection_state(
+							SERIAL_SENDING_DATA,
+							SERIAL_TX_BUFFER_LOCKED
+						);
+					}
+
+				} else {
+
+					// Data bit
+					send_data_bit(tx_bit_counter++);
+
+				}
+
+			} else if (connection_state_is(SERIAL_TX_BUFFER_LOCKED)) {
+
+				// Keep trying to shift TX buffer
+				if (shift_buffer_down(&tx_buffer) == SERIAL_OK) {
+					move_connection_state(
+						SERIAL_SENDING_DATA,
+						SERIAL_IDLE
+					);
+				}	
+
 			} else {
-				// Drat. Try again later
-				move_connection_state(
-					SERIAL_SENDING_DATA,
-					SERIAL_TX_BUFFER_LOCKED
-				);
+
+				// Not sending anything. Check for byte to send. Not using dirty
+				// flag as top != 0 means the same thing for TX buffer
+				if (tx_buffer.top) {
+
+					// New data
+					TX_PORT &= ~(1 << TX_PIN);  // Start bit
+					tx_byte = tx_buffer.data[0];
+					tx_bit_counter = 0;
+					move_connection_state(
+						SERIAL_IDLE,
+						SERIAL_SENT_START_BIT
+					);
+
+				}
+
 			}
 
-		} else {
+			break; // tx_phase 1
 
-			// Data bit
-			send_data_bit(tx_bit_counter++);
-
-		}
-
-	} else if (connection_state_is(SERIAL_TX_BUFFER_LOCKED)) {
-
-		// Keep trying to shift TX buffer
-		if (shift_buffer_down(&tx_buffer) == SERIAL_OK) {
-			move_connection_state(
-				SERIAL_SENDING_DATA,
-				SERIAL_IDLE
-			);
-		}	
-
-	} else {
-
-		// Not sending anything. Check for byte to send. Not using dirty
-		// flag as top != 0 means the same thing for TX buffer
-		if (tx_buffer.top) {
-
-			// New data
-			TX_PORT &= ~(1 << TX_PIN);  // Start bit
-			tx_byte = tx_buffer.data[0];
-			tx_bit_counter = 0;
-			move_connection_state(
-				SERIAL_IDLE,
-				SERIAL_SENT_START_BIT
-			);
-
-		}
-
-	}
-
+	} // switch(tx_phase)
 
 	// Bottom handler: RX buffer 
 	if (rx_buffer.dirty) {
@@ -458,8 +526,6 @@ static void release_buffer_lock(volatile struct buffer *buffer)
 extern return_code_t serial_initialise()
 {
 
-	// Values below are for 8 MHz
-	uint8_t timer_ocr_values[NUM_SPEED] = {51, 25, 12, 8, 3};
 
 	uint8_t *rxd;
 	uint8_t *txd;
@@ -486,6 +552,10 @@ extern return_code_t serial_initialise()
 	if (setup_io(&RX_PORT, RX_PIN, SERIAL_DIR_RX) != SERIAL_OK)
 		return SERIAL_ERROR;
 
+	// Setup interrupt: frame receive: pin change interrupt on RX pin
+	PCMSK |= (1 << RX_PIN); // Bit positions in PCMSK match pin numbers
+	enable_rx_interrupt();
+	
 	// Setup interrupt: Compare Match A interrupt Timer1
 	TIMSK |= (1 << OCIE1A);	
 
@@ -494,9 +564,9 @@ extern return_code_t serial_initialise()
 	TCCR1 |= (1 << CTC1); 
 	OCR1A = OCR1C = timer_ocr_values[SERIAL_SPEED];
 
-	// Start timer. /16 prescaler - datasheet p.89 table 12-5
+	// Start timer. /8 prescaler - datasheet p.89 table 12-5
 	TCCR1 &= ~(1 << CS13 | 1 << CS12 | 1 << CS11 | 1 << CS10);
-	TCCR1 |= (1 << CS12 | 1 << CS10);
+	TCCR1 |= (1 << CS12);
 
 	connection_state = SERIAL_IDLE;
 
@@ -569,9 +639,7 @@ extern uint16_t serial_send_data(char *data, uint16_t data_length)
 
 static void wait_buffer_clean(void) {
 
-	// Spin on dirty buffer. Don't just use an empty loop or gcc optimises
-	// it away. Wait time is just over 1 interrupt interval at 9600 baud, so should
-	// spin at most once
+	// Spin on dirty buffer.
 	while(rx_buffer.dirty);
 
 }
