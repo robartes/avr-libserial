@@ -281,7 +281,7 @@ ISR(PCINT0_vect)
 
 	disable_rx_interrupt();
 	
-	rx_sample_countdown = TCNT1 < ((uint8_t) 0.5 * timer_ocr_values[SERIAL_SPEED]) 
+	rx_sample_countdown = TCNT1 < ((uint8_t) (0.5 * timer_ocr_values[SERIAL_SPEED])) 
 						? 2
 						: 3
 						;
@@ -339,7 +339,7 @@ ISR(TIM1_COMPA_vect)
 					rx_bit_counter = 0;
 					store_data(&rx_buffer, rx_byte);
 					rx_byte = 0;
-				} // Do nothing is this is not a stop bit
+				} // Do nothing if this is not a stop bit
 				
 				// We're done with this byte, so let's wait for the next one. No rest for the wicked
 				move_connection_state(
