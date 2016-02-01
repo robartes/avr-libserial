@@ -12,7 +12,7 @@
 #include <avr/interrupt.h>
 
 #define NUM_SPEED		   5 
-#define PRESCALER_DIVISOR   16
+#define PRESCALER_DIVISOR   8
 
 // Status codes
 #define SERIAL_IDLE						0b00000000
@@ -35,6 +35,10 @@
 
 static uint8_t connection_state = SERIAL_NOT_INITIALISED;
 
+// Timer OCR values for clock
+// Values below are for 8 MHz. They work out to twice the data speed
+static uint8_t timer_ocr_values[NUM_SPEED] = {51, 25, 12, 8, 3};
+
 struct buffer {
 	uint8_t lock;
 	uint8_t *data;
@@ -49,6 +53,9 @@ volatile uint8_t rx_bit_counter = 0;
 volatile uint8_t tx_bit_counter = 0;
 volatile uint8_t rx_byte = 0;
 volatile uint8_t tx_byte = 0;
+volatile uint8_t rx_phase = 0;
+volatile uint8_t tx_phase = 0;
+volatile uint8_t rx_sample_countdown = 0;
 
 
 /************************************************************************
@@ -233,6 +240,56 @@ static uint8_t connection_state_is(uint8_t expected_state)
 {
 
 	return connection_state & expected_state;
+
+}
+
+/************************************************************************
+ * (en|dis)able_rx_interrupt: start / stop RX start bit capture
+ *
+ * This starts/stops the pin change interrupt. It is running when no byte
+ * is currently being received, to capture the next start bit
+ ************************************************************************/
+ 
+static void enable_rx_interrupt(void) {
+
+	GIMSK |= (1 << PCIE);
+
+}
+
+static void disable_rx_interrupt(void) {
+
+	GIMSK &= ~(1 << PCIE);
+
+}
+
+/************************************************************************
+ * Pin change interrupt 0 ISR - capture start bit for RX
+ *
+ * This sets rx_sample_countdown to start data bit sampling some time in 
+ * the future. For Timer1 counter values smaller then half the OCR value,
+ * so when we receive the start bit in the first half of a bit cycle, we
+ * wait 2 timer cycles for sampling, for other case 3 timer cycles.
+ * In all cases, sampling after that is every other timer cycle.
+ * I should include a nice drawing of this in the documentation
+ ************************************************************************/
+
+ISR(PCINT0_vect)
+{
+
+	// Sanity check. This should be a start bit, so low
+	if (bit_is_set(RX_PORT, RX_PIN)) return;
+
+	disable_rx_interrupt();
+	
+	rx_sample_countdown = TCNT1 < ((uint8_t) 0.5 * timer_ocr_values[SERIAL_SPEED]) 
+						? 2
+						: 3
+						;
+
+	move_connection_state(
+		SERIAL_IDLE,
+		SERIAL_RECEIVED_START_BIT
+	);
 
 }
 
@@ -455,8 +512,6 @@ static void release_buffer_lock(volatile struct buffer *buffer)
 extern return_code_t serial_initialise()
 {
 
-	// Values below are for 8 MHz
-	uint8_t timer_ocr_values[NUM_SPEED] = {51, 25, 12, 8, 3};
 
 	uint8_t *rxd;
 	uint8_t *txd;
@@ -483,6 +538,10 @@ extern return_code_t serial_initialise()
 	if (setup_io(&RX_PORT, RX_PIN, SERIAL_DIR_RX) != SERIAL_OK)
 		return SERIAL_ERROR;
 
+	// Setup interrupt: frame receive: pin change interrupt on RX pin
+	PCMSK |= (1 << RX_PIN); // Bit positions in PCMSK match pin numbers
+	enable_rx_interrupt();
+	
 	// Setup interrupt: Compare Match A interrupt Timer1
 	TIMSK |= (1 << OCIE1A);	
 
@@ -491,9 +550,9 @@ extern return_code_t serial_initialise()
 	TCCR1 |= (1 << CTC1); 
 	OCR1A = OCR1C = timer_ocr_values[SERIAL_SPEED];
 
-	// Start timer. /16 prescaler - datasheet p.89 table 12-5
+	// Start timer. /8 prescaler - datasheet p.89 table 12-5
 	TCCR1 &= ~(1 << CS13 | 1 << CS12 | 1 << CS11 | 1 << CS10);
-	TCCR1 |= (1 << CS12 | 1 << CS10);
+	TCCR1 |= (1 << CS12);
 
 	connection_state = SERIAL_IDLE;
 
