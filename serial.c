@@ -306,18 +306,25 @@ ISR(TIM1_COMPA_vect)
 	// RX
 	if (connection_state_is(SERIAL_RECEIVED_START_BIT)) {
 
-		// First data bit
-		if (bit_is_set(RX_PORT, RX_PIN))
-			rx_byte |= (1 << rx_bit_counter);	
-		rx_bit_counter++;
-		move_connection_state(
-			SERIAL_RECEIVED_START_BIT,
-			SERIAL_RECEIVING_DATA 
-		);
-			
+		// Start sampling?
+		if (rx_sample_countdown-- == 0) {
+ 
+			// Sample first bit
+			if (bit_is_set(RX_PORT, RX_PIN)
+				rx_byte |= (1 << rx_bit_counter);
+			rx_bit_counter++;
+			rx_phase = 0;
+			move_connection_state(
+				SERIAL_RECEIVED_START_BIT,
+				SERIAL_RECEIVING_DATA
+			);
 
-	} else if (connection_state_is(SERIAL_RECEIVING_DATA)) {
+		} 
+
+	} else if (rx_phase && connection_state_is(SERIAL_RECEIVING_DATA)) {
 	
+		rx_phase = 0;
+
 		// Subsequent data bits or stop bit
 		switch (rx_bit_counter) {
 
@@ -344,6 +351,9 @@ ISR(TIM1_COMPA_vect)
 					);
 
 				}
+				
+				// We're done with this byte, so let's wait for the next one. No rest for the wicked
+				enable_rx_interrupt();
 				break;
 
 			default:
@@ -354,89 +364,96 @@ ISR(TIM1_COMPA_vect)
 				rx_bit_counter++;
 
 				break;
+		} else {
+
+			rx_phase = 1;
+
 		}
 
-	} else {
-
-		// Not receiving anything right now. Check for start bit
-		if (bit_is_clear(RX_PORT, RX_PIN))
-			move_connection_state(
-				SERIAL_IDLE,
-				SERIAL_RECEIVED_START_BIT
-			);
-
-	}
-
+	}  // if connection_state_is(SERIAL_RECEIVED_START_BIT)
 
 	
 	// TX
-	if (connection_state_is(SERIAL_SENT_START_BIT)) {
+	switch(tx_phase) {
 
-		// Write first bit of data
-		send_data_bit(tx_bit_counter++);
-		move_connection_state(
-			SERIAL_SENT_START_BIT,
-			SERIAL_SENDING_DATA 
-		);
+		case 0:
 
-	} else if (connection_state_is(SERIAL_SENDING_DATA)) {
+			tx_phase = 1;
+			break;
 
-		// Data or stop bit
-		if (tx_bit_counter == 8) {
+		case 1: 
 
-			// Stop bit
-			TX_PORT |=(1 << TX_PIN);
+			tx_phase = 0;
+			if (connection_state_is(SERIAL_SENT_START_BIT)) {
 
-			// Try to shift out the sent byte
-			if (shift_buffer_down(&tx_buffer) == SERIAL_OK) {
+				// Write first bit of data
+				send_data_bit(tx_bit_counter++);
 				move_connection_state(
-					SERIAL_SENDING_DATA,
-					SERIAL_IDLE
+					SERIAL_SENT_START_BIT,
+					SERIAL_SENDING_DATA 
 				);
+
+			} else if (connection_state_is(SERIAL_SENDING_DATA)) {
+
+				// Data or stop bit
+				if (tx_bit_counter == 8) {
+
+					// Stop bit
+					TX_PORT |=(1 << TX_PIN);
+
+					// Try to shift out the sent byte
+					if (shift_buffer_down(&tx_buffer) == SERIAL_OK) {
+						move_connection_state(
+							SERIAL_SENDING_DATA,
+							SERIAL_IDLE
+						);
+					} else {
+						// Drat. Try again later
+						move_connection_state(
+							SERIAL_SENDING_DATA,
+							SERIAL_TX_BUFFER_LOCKED
+						);
+					}
+
+				} else {
+
+					// Data bit
+					send_data_bit(tx_bit_counter++);
+
+				}
+
+			} else if (connection_state_is(SERIAL_TX_BUFFER_LOCKED)) {
+
+				// Keep trying to shift TX buffer
+				if (shift_buffer_down(&tx_buffer) == SERIAL_OK) {
+					move_connection_state(
+						SERIAL_SENDING_DATA,
+						SERIAL_IDLE
+					);
+				}	
+
 			} else {
-				// Drat. Try again later
-				move_connection_state(
-					SERIAL_SENDING_DATA,
-					SERIAL_TX_BUFFER_LOCKED
-				);
+
+				// Not sending anything. Check for byte to send. Not using dirty
+				// flag as top != 0 means the same thing for TX buffer
+				if (tx_buffer.top) {
+
+					// New data
+					TX_PORT &= ~(1 << TX_PIN);  // Start bit
+					tx_byte = tx_buffer.data[0];
+					tx_bit_counter = 0;
+					move_connection_state(
+						SERIAL_IDLE,
+						SERIAL_SENT_START_BIT
+					);
+
+				}
+
 			}
 
-		} else {
+			break; // tx_phase 1
 
-			// Data bit
-			send_data_bit(tx_bit_counter++);
-
-		}
-
-	} else if (connection_state_is(SERIAL_TX_BUFFER_LOCKED)) {
-
-		// Keep trying to shift TX buffer
-		if (shift_buffer_down(&tx_buffer) == SERIAL_OK) {
-			move_connection_state(
-				SERIAL_SENDING_DATA,
-				SERIAL_IDLE
-			);
-		}	
-
-	} else {
-
-		// Not sending anything. Check for byte to send. Not using dirty
-		// flag as top != 0 means the same thing for TX buffer
-		if (tx_buffer.top) {
-
-			// New data
-			TX_PORT &= ~(1 << TX_PIN);  // Start bit
-			tx_byte = tx_buffer.data[0];
-			tx_bit_counter = 0;
-			move_connection_state(
-				SERIAL_IDLE,
-				SERIAL_SENT_START_BIT
-			);
-
-		}
-
-	}
-
+	} // switch(tx_phase)
 
 	// Bottom handler: RX buffer 
 	if (rx_buffer.dirty) {
