@@ -643,10 +643,10 @@ extern uint16_t serial_send_data(char *data, uint16_t data_length)
 
 }
 
-static void wait_buffer_clean(void) {
+static void wait_buffer_clean(struct buffer *buffer) {
 
 	// Spin on dirty buffer.
-	while(rx_buffer.dirty);
+	while(buffer.dirty);
 
 }
 
@@ -688,7 +688,7 @@ extern uint8_t serial_get_char()
 
 	uint8_t my_data;
 
-	wait_buffer_clean();
+	wait_buffer_clean(&rx_buffer);
 
 	my_data = rx_buffer.data[0];  	// FIFO: always read from the front
 	rx_buffer.dirty = 1;		// Signal bottom handler to shift data
