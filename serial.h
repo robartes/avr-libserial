@@ -4,11 +4,12 @@
  * AVR software serial library
  ************************************************************************/
 
-#define SERIAL_SPEED_9600	0
-#define SERIAL_SPEED_19200	1
-#define SERIAL_SPEED_38400	2
-#define SERIAL_SPEED_57600	3
-#define SERIAL_SPEED_115200	4
+#define SERIAL_SPEED_2400	0
+#define SERIAL_SPEED_9600	1
+#define SERIAL_SPEED_19200	2
+#define SERIAL_SPEED_38400	3
+#define SERIAL_SPEED_57600	4
+#define SERIAL_SPEED_115200	5
 
 #define	TX_PORT						PORTB
 #define TX_PIN						PB1

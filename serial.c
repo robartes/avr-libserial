@@ -11,7 +11,7 @@
 #include "serial.h"
 #include <avr/interrupt.h>
 
-#define NUM_SPEED		   5 
+#define NUM_SPEED		   6 
 #define PRESCALER_DIVISOR   8
 
 // Status codes
@@ -38,8 +38,8 @@ static uint8_t connection_state = SERIAL_NOT_INITIALISED;
 // Timer OCR values for clock & sample offset tresholds for RX (which are
 // half the timer_ocr_values, plus some allowance for latency)
 // Values below are for 8 MHz.
-static uint8_t timer_ocr_values[NUM_SPEED] = {52, 25, 12, 8, 3};
-static uint8_t sample_offset_treshold[NUM_SPEED] = {30, 14, 7, 5, 1};
+static uint8_t timer_ocr_values[NUM_SPEED] = {208, 52, 25, 12, 8, 3};
+static uint8_t sample_offset_treshold[NUM_SPEED] = {120, 30, 14, 7, 5, 1};
 
 struct buffer {
 	uint8_t lock;
