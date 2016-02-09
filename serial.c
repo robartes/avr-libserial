@@ -696,3 +696,25 @@ extern uint8_t serial_get_char()
 	return my_data;
 
 }
+
+/************************************************************************
+ * (en|dis)able_receive: start or stop listening for incoming data
+ *
+ * Parameters: none
+ *
+ * Returns: nothing
+ ************************************************************************/
+
+extern void enable_receive()
+{
+
+	enable_rx_interrupt();
+
+}
+
+extern void disable_receive()
+{
+
+	disable_rx_interrupt();
+
+}

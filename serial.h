@@ -94,3 +94,14 @@ extern uint16_t serial_data_pending();
  ************************************************************************/
 
 extern uint8_t serial_get_char();
+
+/************************************************************************
+ * (en|dis)able_receive: start or stop listening for incoming data
+ *
+ * Parameters: none
+ *
+ * Returns: nothing
+ ************************************************************************/
+
+extern void enable_receive();
+extern void disable_receive();
