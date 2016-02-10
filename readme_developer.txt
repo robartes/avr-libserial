@@ -19,13 +19,9 @@ range perfectly. At 4 MHz (I'm assuming you are not going to clock
 your ATTiny slower than that), we have a frequency of 250kHz, while
 at 20Mhz (datasheet maximum) it will be 1.25MHz. 
 
-Please note that the CPU frequency is determined at compile
-time through the F_CPU macro. If you play with the clock prescaler
-at runtime, serial timings will be off.
-
 == Full duplex with 1 timer
 
-To achieve full duplex operation with 1 timer only we have to look at 
+To achieve full duplex operation with only 1 timer we have to look at 
 what happens when incoming data (hereafter referred to as RX) arrives
 while data is being sent out (herafter referred to as TX). As we do
 not control when RX arrives, it is totally asynchronous with the timer
@@ -60,4 +56,18 @@ inputs so we can be sure to either get a 1 or a 0. If the transmitter and
 receiver clocks are sufficiently in sync, this will ensure we will catch 
 the start bit. I hope.
 
+Update: it turns out that my hope was of course in vain. As the transmitter
+and receiver clocks are totally unconnected, there is a serious risk of
+missampling (if that's a word) in the RX routine. 
 
+In testing, at 9600 baud, and with the receiver and transmitter clocks as
+little as 2% divergent, this already caused errors in every 6 bytes or so.
+That is clearly not good enough.
+
+So I went with option 3 - the clock rate of my interrupt routine is double
+the clock rate of the data transfer, which incidentally means that I am now
+using the /8 prescaler and could potentially also use Timer0 instead of 
+Timer1. A start bit on the RX pin is detected by a pin change interrupt,
+which sees how far into the main timer cycle the start bit is received and
+then decides how many timer cycles in the future (3 or 4) to start sampling
+the RX pin for data bits. 
