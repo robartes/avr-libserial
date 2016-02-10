@@ -70,4 +70,6 @@ using the /8 prescaler and could potentially also use Timer0 instead of
 Timer1. A start bit on the RX pin is detected by a pin change interrupt,
 which sees how far into the main timer cycle the start bit is received and
 then decides how many timer cycles in the future (3 or 4) to start sampling
-the RX pin for data bits. 
+the RX pin for data bits. The timer cycles themselves stay fixed, thus 
+making sure that a possible TX ongoing at the time data is received is
+not disturbed.
