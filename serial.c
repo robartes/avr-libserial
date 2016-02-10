@@ -648,10 +648,10 @@ extern uint16_t serial_send_data(char *data, uint16_t data_length)
 
 }
 
-static void wait_buffer_clean(struct buffer *buffer) {
+static void wait_buffer_clean(volatile struct buffer *buffer) {
 
 	// Spin on dirty buffer.
-	while(buffer.dirty);
+	while(buffer->dirty);
 
 }
 
@@ -671,7 +671,7 @@ extern uint16_t serial_data_pending()
 	uint16_t retval = 0;
 
 	if (rx_buffer.top) {
-		wait_buffer_clean();
+		wait_buffer_clean(&rx_buffer);
 		retval = rx_buffer.top;
 	}
 
