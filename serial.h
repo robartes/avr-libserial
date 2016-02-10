@@ -103,5 +103,5 @@ extern uint8_t serial_get_char();
  * Returns: nothing
  ************************************************************************/
 
-extern void enable_receive();
-extern void disable_receive();
+extern void serial_enable_receive();
+extern void serial_disable_receive();

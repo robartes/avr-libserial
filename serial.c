@@ -564,7 +564,6 @@ extern return_code_t serial_initialise()
 
 	// Setup interrupt: frame receive: pin change interrupt on RX pin
 	PCMSK |= (1 << RX_PIN); // Bit positions in PCMSK match pin numbers
-	enable_rx_interrupt();
 #endif
 	
 	// Setup interrupt: Compare Match A interrupt Timer1
@@ -711,14 +710,14 @@ extern uint8_t serial_get_char()
  * Returns: nothing
  ************************************************************************/
 
-extern void enable_receive()
+extern void serial_enable_receive()
 {
 
 	enable_rx_interrupt();
 
 }
 
-extern void disable_receive()
+extern void serial_disable_receive()
 {
 
 	disable_rx_interrupt();
