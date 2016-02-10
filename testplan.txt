@@ -1,7 +1,0 @@
-- Check Timer ISR frequency
-	9600
-	57600
-	115200
-- Write 1 character
-- Write >1 characters
-- Read 1 character
