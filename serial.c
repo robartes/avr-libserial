@@ -265,6 +265,7 @@ static void disable_rx_interrupt(void) {
 
 }
 
+#ifndef TX_ONLY
 /************************************************************************
  * Pin change interrupt 0 ISR - capture start bit for RX
  *
@@ -301,6 +302,7 @@ ISR(PCINT0_vect)
 	);
 
 }
+#endif
 
 /************************************************************************
  * Timer1 Compare Match A interrupt - main polling / transmit routine
@@ -312,6 +314,7 @@ ISR(PCINT0_vect)
 ISR(TIM1_COMPA_vect)
 {
 
+#ifndef TX_ONLY
 	// RX
 	if (connection_state_is(SERIAL_RECEIVED_START_BIT)) {
 
@@ -374,7 +377,7 @@ ISR(TIM1_COMPA_vect)
 		rx_phase = 1;
 
 	}  // if connection_state_is(SERIAL_RECEIVED_START_BIT)
-
+#endif
 	
 	// TX
 	switch(tx_phase) {
@@ -555,12 +558,14 @@ extern return_code_t serial_initialise()
 	if (setup_io(&TX_PORT, TX_PIN, SERIAL_DIR_TX) != SERIAL_OK)
 		return SERIAL_ERROR;
 
+#ifndef TX_ONLY
 	if (setup_io(&RX_PORT, RX_PIN, SERIAL_DIR_RX) != SERIAL_OK)
 		return SERIAL_ERROR;
 
 	// Setup interrupt: frame receive: pin change interrupt on RX pin
 	PCMSK |= (1 << RX_PIN); // Bit positions in PCMSK match pin numbers
 	enable_rx_interrupt();
+#endif
 	
 	// Setup interrupt: Compare Match A interrupt Timer1
 	TIMSK |= (1 << OCIE1A);	
@@ -650,6 +655,7 @@ static void wait_buffer_clean(struct buffer *buffer) {
 
 }
 
+#ifndef TX_ONLY
 /************************************************************************
  * serial_data_pending: Check whether any data has been received
  *
@@ -718,3 +724,4 @@ extern void disable_receive()
 	disable_rx_interrupt();
 
 }
+#endif
