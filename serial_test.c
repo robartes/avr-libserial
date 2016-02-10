@@ -31,6 +31,7 @@ int main(void)
 
 		// Test 4: two way communication
 		//while (serial_data_pending()) {
+		serial_enable_receive();
 		while (1) {
 			if (serial_data_pending()) {
 
