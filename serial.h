@@ -73,6 +73,7 @@ extern return_code_t serial_put_char(uint8_t data);
 
 extern uint16_t serial_send_data(char *data, uint16_t data_length);
 
+#ifndef TX_ONLY
 /************************************************************************
  * serial_data_pending: Check whether any data has been received
  *
@@ -105,3 +106,4 @@ extern uint8_t serial_get_char();
 
 extern void serial_enable_receive();
 extern void serial_disable_receive();
+#endif
