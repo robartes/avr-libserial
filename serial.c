@@ -39,7 +39,10 @@ static uint8_t connection_state = SERIAL_NOT_INITIALISED;
 // half the timer_ocr_values, plus some allowance for latency)
 // Values below are for 8 MHz.
 static uint8_t timer_ocr_values[NUM_SPEED] = {208, 52, 25, 12, 8, 3};
+
+#ifndef TX_ONLY
 static uint8_t sample_offset_treshold[NUM_SPEED] = {120, 30, 14, 7, 5, 1};
+#endif
 
 struct buffer {
 	uint8_t lock;
@@ -53,12 +56,16 @@ static volatile struct buffer tx_buffer = {0, NULL, 0, 0};
 
 static volatile uint8_t rx_bit_counter = 0;
 static volatile uint8_t tx_bit_counter = 0;
-static volatile uint8_t rx_byte = 0;
 static volatile uint8_t tx_byte = 0;
-static volatile uint8_t rx_phase = 0;
 static volatile uint8_t tx_phase = 0;
+
+#ifndef TX_ONLY
+static volatile uint8_t rx_byte = 0;
+static volatile uint8_t rx_phase = 0;
 static volatile uint8_t rx_sample_countdown = 0;
 static volatile uint8_t rx_start_bit_timecount = 0;
+#endif
+
 
 
 /************************************************************************
@@ -190,6 +197,7 @@ static return_code_t shift_buffer_down(volatile struct buffer *buffer)
 
 }
 
+#ifndef TX_ONLY
 /************************************************************************
  * store_data: store a byte in the receive buffer
  *
@@ -228,6 +236,7 @@ static return_code_t store_data(volatile struct buffer *buffer, uint8_t data)
 	return retval;
 
 }
+#endif
 
 /************************************************************************
  * connection_state_is: check connection state
@@ -246,6 +255,7 @@ static uint8_t connection_state_is(uint8_t expected_state)
 
 }
 
+#ifndef TX_ONLY
 /************************************************************************
  * (en|dis)able_rx_interrupt: start / stop RX start bit capture
  *
@@ -265,7 +275,6 @@ static void disable_rx_interrupt(void) {
 
 }
 
-#ifndef TX_ONLY
 /************************************************************************
  * Pin change interrupt 0 ISR - capture start bit for RX
  *
@@ -647,6 +656,7 @@ extern uint16_t serial_send_data(char *data, uint16_t data_length)
 
 }
 
+#ifndef TX_ONLY
 static void wait_buffer_clean(volatile struct buffer *buffer) {
 
 	// Spin on dirty buffer.
@@ -654,7 +664,6 @@ static void wait_buffer_clean(volatile struct buffer *buffer) {
 
 }
 
-#ifndef TX_ONLY
 /************************************************************************
  * serial_data_pending: Check whether any data has been received
  *
