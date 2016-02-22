@@ -64,14 +64,13 @@ extern return_code_t serial_put_char(uint8_t data);
  *
  * Parameters:
  *		uint8_t *data	The data to be sent
- * 		uint16_t length	The length of the data to be sent
  *
  * Returns:
  *		Number of bytes sent. This could be less than length, as the
  *		buffer might be full or some other error might have occured
  ************************************************************************/
 
-extern uint16_t serial_send_data(char *data, uint16_t data_length);
+extern uint16_t serial_send_data(char *data);
 
 #ifndef TX_ONLY
 /************************************************************************

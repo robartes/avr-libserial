@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "serial.h"
 #include <avr/interrupt.h>
 
@@ -633,17 +634,18 @@ extern return_code_t serial_put_char(uint8_t data)
  *
  * Parameters:
  *		char *data	The data to be sent
- * 		uint16_t length	The length of the data to be sent
  *
  * Returns:
  *		Number of bytes sent out. This could be less than length, as the
  *		buffer might be full or some other error might have occured
  ************************************************************************/
 
-extern uint16_t serial_send_data(char *data, uint16_t data_length)
+extern uint16_t serial_send_data(char *data)
 {
 
+	uint16_t data_length = strlen(data);
 	uint16_t i;
+
 
 	for (i = 0; i < data_length; i++) {
 

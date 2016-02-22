@@ -25,7 +25,7 @@ int main(void)
 
 		// Test 3: write more characters
 		while (0) {
-			serial_send_data("Bits of sand", 12);
+			serial_send_data("Bits of sand");
 			_delay_ms(100);
 		}
 
