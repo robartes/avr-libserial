@@ -28,6 +28,8 @@
 
 #define SERIAL_NOT_INITIALISED		0b10000000
 
+#define PIN_INVALID		99
+
 
 
 /************************************************************************
@@ -67,6 +69,15 @@ static volatile uint8_t rx_sample_countdown = 0;
 static volatile uint8_t rx_start_bit_timecount = 0;
 #endif
 
+struct serial_config_t {
+	uint8_t tx_pin;
+	volatile uint8_t *tx_port;
+	uint8_t	rx_pin;	
+	volatile uint8_t *rx_port;
+	serial_speed_t speed;
+};
+
+struct serial_config_t *serial_config;
 
 
 /************************************************************************
@@ -78,8 +89,7 @@ static volatile uint8_t rx_start_bit_timecount = 0;
  * setup_io: what it says on the tin
  *
  * Parameters:
- *		volatile uint8_t *port	Memory address of the I/O port
- *		uint8_t pin				Port pin
+ *		char *pin
  *		serial_direction_t dir  TX or RX port?
  *
  * This library is written for ATTinyx5 which only has PORTB, but the
@@ -94,34 +104,45 @@ typedef enum {
 } serial_direction_t;
 
 static return_code_t setup_io(
-				volatile uint8_t *port,
-				uint8_t pin,
+				char *pin,
 				serial_direction_t dir
 				)
 {
 
+	// Quick bail - check if user does not want rx or tx
+	if (pin == NULL) 
+		return SERIAL_OK;
+
 	// Sanity checks
-	if (port != &PORTB && port != &PINB) 
+	if (strlen(pin) != 3)
+		return SERIAL_ERROR;
+	if (strstr(pin, "B") == NULL)
 		return SERIAL_ERROR;
 
-	if (pin > 5)
+	uint8_t pin_number = *(pin+2) - 0x30; // 0x30 = ASCII "0"
+	if (pin_number > 5)
 		return SERIAL_ERROR;
 
 	switch (dir) {
 		
 		case SERIAL_DIR_TX:
 
-			DDRB |= (1 << pin);
-			PORTB |= (1 << pin);  // Set high (idle)
+			DDRB |= (1 << pin_number);
+			PORTB |= (1 << pin_number);  // Set high (idle)
+			serial_config->tx_pin = pin_number;
+			serial_config->tx_port = &PORTB;
 			break;
 
 		case SERIAL_DIR_RX:
 		
-			DDRB &= ~(1 << pin);
-			PORTB &= ~(1 << pin);  // No pullup
+			DDRB &= ~(1 << pin_number);
+			PORTB &= ~(1 << pin_number);  // No pullup
+			serial_config->rx_pin = pin_number;
+			serial_config->rx_port = &PINB;
 			break;
 
 	}
+
 
 	return SERIAL_OK;
 
@@ -156,9 +177,9 @@ static void send_data_bit(uint8_t bit)
 {
 
 		if (tx_byte & (1 << bit)) {
-				TX_PORT |= (1 << TX_PIN);
+				*(serial_config->tx_port) |= (1 << serial_config->tx_pin);
 		} else {
-				TX_PORT &= ~(1 << TX_PIN);
+				*(serial_config->tx_port) &= ~(1 << serial_config->tx_pin);
 		}
 
 }
@@ -295,11 +316,11 @@ ISR(PCINT0_vect)
 	rx_start_bit_timecount = TCNT1;
 
 	// Sanity check. This should be a start bit, so low
-	if (bit_is_set(RX_PORT, RX_PIN)) return;
+	if (bit_is_set(serial_config->rx_port, serial_config->rx_pin)) return;
 
 	disable_rx_interrupt();
 
-	if (rx_start_bit_timecount < sample_offset_treshold[SERIAL_SPEED]) {
+	if (rx_start_bit_timecount < sample_offset_treshold[serial_config->speed]) {
 		rx_sample_countdown = 2;
 	} else {
 		rx_sample_countdown = 3;
@@ -332,7 +353,7 @@ ISR(TIM1_COMPA_vect)
 		if (rx_sample_countdown-- == 0) {
  
 			// Sample first bit
-			if (bit_is_set(RX_PORT, RX_PIN))
+			if (bit_is_set(*(serial_config->rx_port), serial_config->rx_pin))
 				rx_byte |= (1 << rx_bit_counter);
 			rx_bit_counter++;
 			rx_phase = 0;
@@ -357,7 +378,7 @@ ISR(TIM1_COMPA_vect)
 				// with access, and shifting bytes out of the buffer is 
 				// done in the bottom handler of this interrupt, we can
 				// be sure no one else is accessing the buffer
-				if (bit_is_set(RX_PORT, RX_PIN)) {
+				if (bit_is_set(*(serial_config->rx_port), serial_config->rx_pin)) {
 					rx_bit_counter = 0;
 					store_data(&rx_buffer, rx_byte);
 					rx_byte = 0;
@@ -375,7 +396,7 @@ ISR(TIM1_COMPA_vect)
 			default:
 
 				// Normal data bit
-				if (bit_is_set(RX_PORT, RX_PIN))
+				if (bit_is_set(*(serial_config->rx_port), serial_config->rx_pin))
 					rx_byte |= (1 << rx_bit_counter);	
 				rx_bit_counter++;
 
@@ -415,7 +436,7 @@ ISR(TIM1_COMPA_vect)
 				if (tx_bit_counter == 8) {
 
 					// Stop bit
-					TX_PORT |=(1 << TX_PIN);
+					*(serial_config->tx_port) |=(1 << serial_config->tx_pin);
 
 					// Try to shift out the sent byte
 					if (shift_buffer_down(&tx_buffer) == SERIAL_OK) {
@@ -455,7 +476,7 @@ ISR(TIM1_COMPA_vect)
 				if (tx_buffer.top) {
 
 					// New data
-					TX_PORT &= ~(1 << TX_PIN);  // Start bit
+					*(serial_config->tx_port) &= ~(1 << serial_config->tx_pin);  // Start bit
 					tx_byte = tx_buffer.data[0];
 					tx_bit_counter = 0;
 					move_connection_state(
@@ -529,7 +550,7 @@ static void release_buffer_lock(volatile struct buffer *buffer)
  *	  SERIAL_ERROR on error
  *	  SERIAL_OK otherwise
  *
- * This function:
+ * This function:f
  *  - Mallocs rx & tx buffers
  *  - Sets up the I/O ports
  *  - Sets up the frame receive interrupt
@@ -542,7 +563,7 @@ static void release_buffer_lock(volatile struct buffer *buffer)
  ************************************************************************/
 
 
-extern return_code_t serial_initialise()
+extern return_code_t serial_initialise(struct serial_init *serial_init)
 {
 
 
@@ -565,15 +586,26 @@ extern return_code_t serial_initialise()
 	tx_buffer.data = txd;
 
 	// Setup I/O
-	if (setup_io(&TX_PORT, TX_PIN, SERIAL_DIR_TX) != SERIAL_OK)
+
+	if ((serial_config = malloc(sizeof(struct serial_config_t))) == NULL)
+		return SERIAL_ERROR;
+
+	serial_config->tx_pin = PIN_INVALID;
+	serial_config->rx_pin = PIN_INVALID;
+
+	if (setup_io(serial_init->tx_pin, SERIAL_DIR_TX) != SERIAL_OK)
 		return SERIAL_ERROR;
 
 #ifndef TX_ONLY
-	if (setup_io(&RX_PORT, RX_PIN, SERIAL_DIR_RX) != SERIAL_OK)
+	if (setup_io(serial_init->rx_pin, SERIAL_DIR_RX) != SERIAL_OK)
 		return SERIAL_ERROR;
 
+	// Squirrel away speed setting
+	serial_config->speed = serial_init->speed;
+
 	// Setup interrupt: frame receive: pin change interrupt on RX pin
-	PCMSK |= (1 << RX_PIN); // Bit positions in PCMSK match pin numbers
+	if (serial_config->rx_pin != PIN_INVALID)
+		PCMSK |= (1 << serial_config->rx_pin); // Bit positions in PCMSK match pin numbers
 #endif
 	
 	// Setup interrupt: Compare Match A interrupt Timer1
@@ -582,7 +614,7 @@ extern return_code_t serial_initialise()
 	// Setup timer
 	// CTC Mode (clear on reaching OCR1C)
 	TCCR1 |= (1 << CTC1); 
-	OCR1A = OCR1C = timer_ocr_values[SERIAL_SPEED];
+	OCR1A = OCR1C = timer_ocr_values[serial_init->speed];
 
 	// Start timer. /8 prescaler - datasheet p.89 table 12-5
 	TCCR1 &= ~(1 << CS13 | 1 << CS12 | 1 << CS11 | 1 << CS10);

@@ -4,18 +4,6 @@
  * AVR software serial library
  ************************************************************************/
 
-#define SERIAL_SPEED_2400	0
-#define SERIAL_SPEED_9600	1
-#define SERIAL_SPEED_19200	2
-#define SERIAL_SPEED_38400	3
-#define SERIAL_SPEED_57600	4
-#define SERIAL_SPEED_115200	5
-
-#define	TX_PORT						PORTB
-#define TX_PIN						PB1
-#define	RX_PORT						PINB
-#define	RX_PIN						PB2
-#define SERIAL_SPEED				SERIAL_SPEED_9600
 #define RX_BUFFER_SIZE				64			// In bytes
 #define TX_BUFFER_SIZE				64			// In bytes
 
@@ -24,11 +12,35 @@ typedef enum {
 	SERIAL_OK,	
 } return_code_t ;
 
+typedef enum {
+	SERIAL_SPEED_2400,
+	SERIAL_SPEED_9600,
+	SERIAL_SPEED_19200,
+	SERIAL_SPEED_38400,
+	SERIAL_SPEED_57600,
+	SERIAL_SPEED_115200,
+} serial_speed_t;
+
+/************************************************************************
+ * struct serial_init: initialisation structure
+ *
+ * Members:
+ *		char *rx_pin	Pin for receive (standard Pxy format)
+ *		char *tx_pin	Pin for transmit (standard Pxy format)
+ *		serial_speed_t speed	Serial speed
+ ************************************************************************/
+
+struct serial_init {
+	char *rx_pin;
+	char *tx_pin;
+	serial_speed_t speed;
+};
+
 /************************************************************************
  * serial_initialise: set up connection
  * 
- * Parameters: none
- *
+ * Parameters: struct serial_init *
+ *			Initialisation structure
  * Returns:
  *	  ERROR on error
  *	  OK otherwise
@@ -44,7 +56,7 @@ typedef enum {
  *  - No PCINT interrupt possible on RX pin   
  ************************************************************************/
  
-extern return_code_t serial_initialise();
+extern return_code_t serial_initialise(struct serial_init*);
 
 /************************************************************************
  * serial_put_char: send a single byte

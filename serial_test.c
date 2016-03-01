@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <avr/io.h>
 #include <util/delay.h>
+#include <string.h>
+#include <stdlib.h>
 
 #include "serial.h"
 
@@ -11,7 +13,14 @@ int main(void)
 
 	DDRB |= (1 << PB0 | 1 << PB4);
 
-	if (serial_initialise() == SERIAL_OK) {
+	struct serial_init *serial_init = malloc(sizeof(struct serial_init));
+	serial_init->rx_pin = "PB1";
+	serial_init->tx_pin = "PB2";
+	serial_init->speed = SERIAL_SPEED_9600;
+
+	
+
+	if (serial_initialise(serial_init) == SERIAL_OK) {
 
 		// Test 1: canary test
 		while (0) {
