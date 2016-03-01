@@ -77,3 +77,7 @@ disasm:	main.elf
 
 cpp:
 	$(COMPILE) -E main.c
+
+# Library creation target
+lib: serial.o
+	avr-ar rc libserial.a serial.o
