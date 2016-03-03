@@ -2,3 +2,4 @@ main*
 *.swp
 *.o
 *.s
+*.a
