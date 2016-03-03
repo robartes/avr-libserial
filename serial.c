@@ -622,9 +622,6 @@ extern return_code_t serial_initialise(struct serial_init *serial_init)
 
 	connection_state = SERIAL_IDLE;
 
-	// Let's go
-	sei();
-
 	return SERIAL_OK;
 
 }
